@@ -97,7 +97,7 @@ export default function SignupPage() {
       if (dealerError) throw dealerError;
 
       // 3. Create Stripe Checkout Session
-      const response = await fetch('http://localhost:3001/create-checkout-session', {
+      const response = await fetch('https://windowfit-production.up.railway.app/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
