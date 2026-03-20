@@ -1,41 +1,38 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
-const puppeteer = require('puppeteer');
 const Stripe = require('stripe');
 
 const app = express();
 
-// ── Stripe webhook needs raw body ──────────────────────────────────
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(cors());
 app.use(express.json());
 
-const stripe = new Stripe('sk_test_51TCQSBLvxQtMPVpkNBOkhdTf9VwxRQdWOBqxBS1c0BDXhhcSLJ428Kie7POv6vRuVAQ5MLEVgb5t4cjAPuusa0q700VmwPzPkY');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const supabase = createClient(
-  'https://vqtuuncnolvkxyelapdo.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxdHV1bmNub2x2a3h5ZWxhcGRvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzE4NTQ4NCwiZXhwIjoyMDg4NzYxNDg0fQ.iFnF4vPFL-wBX5yL8K_Bhuy6IDr7v2uSIuKNTIoVBk8'
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
 );
 
-const resend = new Resend('re_bsm6K39x_Kp98UUbq43Rc3deYE7zmn44k');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ── Plan config ────────────────────────────────────────────────────
+const PORTAL_URL = process.env.PORTAL_URL || 'http://localhost:5173';
+
 const PLANS = {
   'price_1TCQW2LvxQtMPVpkECUsES8V': { name: 'basic',      label: 'Basic',      price: 7900  },
   'price_1TCQWTLvxQtMPVpkyEgtD0TS': { name: 'pro',        label: 'Pro',        price: 14900 },
   'price_1TCQWmLvxQtMPVpkLCKPkb2G': { name: 'enterprise', label: 'Enterprise', price: 29900 },
 };
 
-// ── Create Stripe Checkout Session ─────────────────────────────────
 app.post('/create-checkout-session', async (req, res) => {
   const { priceId, dealerId, dealerEmail, dealerName } = req.body;
-
   if (!priceId || !dealerId) {
     return res.status(400).json({ error: 'priceId and dealerId are required' });
   }
-
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -44,10 +41,9 @@ app.post('/create-checkout-session', async (req, res) => {
       customer_email: dealerEmail,
       metadata: { dealerId, dealerName: dealerName || '' },
       subscription_data: { metadata: { dealerId } },
-      success_url: `http://localhost:5173/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `http://localhost:5173/billing/cancelled`,
+      success_url: `${PORTAL_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${PORTAL_URL}/billing/cancelled`,
     });
-
     res.json({ url: session.url, sessionId: session.id });
   } catch (e) {
     console.error('Checkout error:', e);
@@ -55,10 +51,8 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
-// ── Create Billing Portal Session ──────────────────────────────────
 app.post('/create-portal-session', async (req, res) => {
   const { dealerId } = req.body;
-
   try {
     const { data: dealer } = await supabase
       .from('dealers')
@@ -72,9 +66,8 @@ app.post('/create-portal-session', async (req, res) => {
 
     const session = await stripe.billingPortal.sessions.create({
       customer: dealer.stripe_customer_id,
-      return_url: `http://localhost:5173/settings`,
+      return_url: `${PORTAL_URL}/settings`,
     });
-
     res.json({ url: session.url });
   } catch (e) {
     console.error('Portal error:', e);
@@ -82,7 +75,6 @@ app.post('/create-portal-session', async (req, res) => {
   }
 });
 
-// ── Get subscription status ────────────────────────────────────────
 app.get('/subscription/:dealerId', async (req, res) => {
   const { dealerId } = req.params;
   try {
@@ -98,17 +90,13 @@ app.get('/subscription/:dealerId', async (req, res) => {
     if (dealer.stripe_sub_id) {
       stripeSubscription = await stripe.subscriptions.retrieve(dealer.stripe_sub_id);
     }
-
     res.json({ dealer, stripeSubscription });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ── Stripe Webhook ─────────────────────────────────────────────────
-// To get your webhook secret: stripe listen --forward-to localhost:3001/webhook
-// It will print a whsec_... secret — add it below
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_c793a87ee18f5e3984deb0db9079c629ca0db60ab5c41df6e3171929718049d4';
+const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 app.post('/webhook', async (req, res) => {
   let event;
@@ -123,7 +111,6 @@ app.post('/webhook', async (req, res) => {
 
   try {
     switch (event.type) {
-
       case 'checkout.session.completed': {
         const session = event.data.object;
         const dealerId = session.metadata?.dealerId;
@@ -231,7 +218,6 @@ app.post('/webhook', async (req, res) => {
   res.json({ received: true });
 });
 
-// ── Send Quote Email (existing) ────────────────────────────────────
 app.post('/send-quote', async (req, res) => {
   const { quoteId } = req.body;
   if (!quoteId) return res.status(400).json({ error: 'quoteId is required' });
@@ -267,12 +253,12 @@ app.post('/send-quote', async (req, res) => {
     const dealerName = quote.dealer.app_name ?? quote.dealer.name;
     const customerName = `${quote.customer.first_name} ${quote.customer.last_name}`;
     const brandColor = quote.dealer.brand_color ?? '#0A84FF';
-    const portalUrl = `http://localhost:5173/quote/${token}`;
+    const portalUrl = `${PORTAL_URL}/quote/${token}`;
 
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: `${dealerName} <quotes@resend.dev>`,
+      from: `${dealerName} <quotes@windowfit.io>`,
       to: [quote.customer.email],
-      subject: `Your Quote from ${dealerName} — ${quote.quote_number}`,
+      subject: `Your Quote from ${dealerName} – ${quote.quote_number}`,
       html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
         <div style="background:${brandColor};padding:24px;color:white">
           <h2 style="margin:0">${dealerName}</h2>
@@ -297,13 +283,12 @@ app.post('/send-quote', async (req, res) => {
   }
 });
 
-// ── Health check ───────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'WindowFit Server', stripe: 'connected' });
 });
 
-const PORT = 3001;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`WindowFit server running on http://localhost:${PORT}`);
   console.log(`Stripe integration: READY`);
   console.log(`Webhook endpoint: http://localhost:${PORT}/webhook`);
