@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -127,7 +127,7 @@ app.post('/webhook', async (req, res) => {
           trial_ends_at: null,
         }).eq('id', dealerId);
 
-        console.log(`✅ Dealer ${dealerId} activated on ${plan?.label} plan`);
+        console.log(`[OK] Dealer ${dealerId} activated on ${plan?.label} plan`);
         break;
       }
 
@@ -144,7 +144,7 @@ app.post('/webhook', async (req, res) => {
 
         if (dealer) {
           await supabase.from('dealers').update({ status: 'active' }).eq('id', dealer.id);
-          console.log(`✅ Payment succeeded for dealer ${dealer.id}`);
+          console.log(`[OK] Payment succeeded for dealer ${dealer.id}`);
         }
         break;
       }
@@ -162,7 +162,7 @@ app.post('/webhook', async (req, res) => {
 
         if (dealer) {
           await supabase.from('dealers').update({ status: 'past_due' }).eq('id', dealer.id);
-          console.log(`⚠️ Payment failed for dealer ${dealer.id}`);
+          console.log(`[WARN] Payment failed for dealer ${dealer.id}`);
         }
         break;
       }
@@ -184,7 +184,7 @@ app.post('/webhook', async (req, res) => {
             mrr_cents: plan.price,
             status: sub.status === 'active' ? 'active' : sub.status,
           }).eq('id', dealer.id);
-          console.log(`✅ Dealer ${dealer.id} updated to ${plan.label}`);
+          console.log(`[OK] Dealer ${dealer.id} updated to ${plan.label}`);
         }
         break;
       }
@@ -204,7 +204,7 @@ app.post('/webhook', async (req, res) => {
             mrr_cents: 0,
             stripe_sub_id: null,
           }).eq('id', dealer.id);
-          console.log(`❌ Dealer ${dealer.id} cancelled`);
+          console.log(`[ERR] Dealer ${dealer.id} cancelled`);
         }
         break;
       }
@@ -267,7 +267,7 @@ app.post('/send-quote', async (req, res) => {
           <div style="text-align:center;margin:24px 0">
             <div style="font-size:32px;font-weight:800;color:${brandColor}">$${(quote.total_cents/100).toFixed(0)}</div>
           </div>
-          <a href="${portalUrl}" style="display:block;background:${brandColor};color:white;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-weight:700">View & Approve Quote →</a>
+          <a href="${portalUrl}" style="display:block;background:${brandColor};color:white;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-weight:700">View & Approve Quote -></a>
         </div>
       </div>`,
     });
