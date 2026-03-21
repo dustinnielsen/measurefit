@@ -251,4 +251,5 @@ function AccessDenied() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: '100vh', background: '#f9fafb', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', padding: '0 0 48px 0' },
-  header: { background: '#0f172a', color: '#fff', padding: '24px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  header: { background: '#0f172a', color: '#fff', padding: '24px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }, 
+ 
