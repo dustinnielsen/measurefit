@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -356,11 +356,6 @@ app.get('/api/admin/recent-signups', requireAdminSecret, async (req, res) => {
   }
 });
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`WindowFit server running on http://localhost:${PORT}`);
-  console.log(`Stripe integration: READY`);
-  console.log(`Webhook endpoint: http://localhost:${PORT}/webhook`);
+app.listen(PORT, '0.0.0.0', function() {
+  console.log('WindowFit server running on port ' + PORT);
 });
- 
- / /   d e p l o y  
- 
