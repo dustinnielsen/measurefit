@@ -5,7 +5,7 @@ const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET;
 
 interface Dealer {
   id: string;
-  business_name: string;
+  name: string;
   email: string;
   plan: string;
   status: string;
@@ -74,7 +74,7 @@ export default function AdminDashboard() {
 
   const filtered = dealers.filter((d) => {
     const matchSearch =
-      d.business_name?.toLowerCase().includes(search.toLowerCase()) ||
+      d.name?.toLowerCase().includes(search.toLowerCase()) ||
       d.email?.toLowerCase().includes(search.toLowerCase());
     const matchPlan = filterPlan === 'all' || d.plan?.toLowerCase() === filterPlan;
     const matchStatus = filterStatus === 'all' || d.status?.toLowerCase() === filterStatus;
@@ -137,7 +137,7 @@ export default function AdminDashboard() {
                 const sc = statusColors[d.status?.toLowerCase()] || { bg: '#f3f4f6', text: '#374151' };
                 return (
                   <tr key={d.id} style={{ ...styles.tr, background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                    <td style={styles.td}><span style={styles.bizName}>{d.business_name || '-'}</span></td>
+                    <td style={styles.td}><span style={styles.bizName}>{d.name || '-'}</span></td>
                     <td style={{ ...styles.td, color: '#6b7280', fontSize: 13 }}>{d.email}</td>
                     <td style={styles.td}>
                       <span style={{ ...styles.pill, background: planColors[d.plan?.toLowerCase()] || '#e5e7eb', color: '#fff' }}>

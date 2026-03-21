@@ -299,7 +299,7 @@ app.get('/api/admin/dealers', requireAdminSecret, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('dealers')
-      .select('id, business_name, email, plan, status, stripe_customer_id, created_at')
+      .select('id, name, email, plan, status, stripe_customer_id, created_at')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -344,7 +344,7 @@ app.get('/api/admin/recent-signups', requireAdminSecret, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('dealers')
-      .select('id, business_name, email, plan, status, created_at')
+      .select('id, name, email, plan, status, created_at')
       .order('created_at', { ascending: false })
       .limit(10);
 
