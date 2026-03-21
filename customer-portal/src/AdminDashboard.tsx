@@ -92,67 +92,27 @@ export default function AdminDashboard() {
         </div>
         <div style={styles.badge}>INTERNAL</div>
       </div>
-
       {mrr && (
         <div style={styles.cardRow}>
-          <StatCard
-            label="Monthly Recurring Revenue"
-            value={`$${mrr.mrr.toLocaleString()}`}
-            sub={`$${arr(mrr.mrr).toLocaleString()} ARR`}
-            color="#0ea5e9"
-          />
-          <StatCard
-            label="Active Dealers"
-            value={mrr.total_active}
-            sub={`${dealers.length} total`}
-            color="#6366f1"
-          />
-          <StatCard
-            label="Basic"
-            value={mrr.counts.basic}
-            sub={`$${(mrr.counts.basic * 79).toLocaleString()}/mo`}
-            color="#6366f1"
-          />
-          <StatCard
-            label="Pro"
-            value={mrr.counts.pro}
-            sub={`$${(mrr.counts.pro * 149).toLocaleString()}/mo`}
-            color="#0ea5e9"
-          />
-          <StatCard
-            label="Enterprise"
-            value={mrr.counts.enterprise}
-            sub={`$${(mrr.counts.enterprise * 299).toLocaleString()}/mo`}
-            color="#f59e0b"
-          />
+          <StatCard label="Monthly Recurring Revenue" value={`$${mrr.mrr.toLocaleString()}`} sub={`$${arr(mrr.mrr).toLocaleString()} ARR`} color="#0ea5e9" />
+          <StatCard label="Active Dealers" value={mrr.total_active} sub={`${dealers.length} total`} color="#6366f1" />
+          <StatCard label="Basic" value={mrr.counts.basic} sub={`$${(mrr.counts.basic * 79).toLocaleString()}/mo`} color="#6366f1" />
+          <StatCard label="Pro" value={mrr.counts.pro} sub={`$${(mrr.counts.pro * 149).toLocaleString()}/mo`} color="#0ea5e9" />
+          <StatCard label="Enterprise" value={mrr.counts.enterprise} sub={`$${(mrr.counts.enterprise * 299).toLocaleString()}/mo`} color="#f59e0b" />
         </div>
       )}
-
       <div style={styles.section}>
         <div style={styles.tableHeader}>
           <h2 style={styles.h2}>Dealers ({filtered.length})</h2>
           <div style={styles.filters}>
-            <input
-              style={styles.searchInput}
-              placeholder="Search name or email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <select
-              style={styles.select}
-              value={filterPlan}
-              onChange={(e) => setFilterPlan(e.target.value)}
-            >
+            <input style={styles.searchInput} placeholder="Search name or email..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select style={styles.select} value={filterPlan} onChange={(e) => setFilterPlan(e.target.value)}>
               <option value="all">All Plans</option>
               <option value="basic">Basic</option>
               <option value="pro">Pro</option>
               <option value="enterprise">Enterprise</option>
             </select>
-            <select
-              style={styles.select}
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
+            <select style={styles.select} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
               <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="trialing">Trialing</option>
@@ -161,7 +121,6 @@ export default function AdminDashboard() {
             </select>
           </div>
         </div>
-
         <div style={styles.tableWrap}>
           <table style={styles.table}>
             <thead>
@@ -178,28 +137,18 @@ export default function AdminDashboard() {
                 const sc = statusColors[d.status?.toLowerCase()] || { bg: '#f3f4f6', text: '#374151' };
                 return (
                   <tr key={d.id} style={{ ...styles.tr, background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                    <td style={styles.td}>
-                      <span style={styles.bizName}>{d.business_name || '—'}</span>
-                    </td>
+                    <td style={styles.td}><span style={styles.bizName}>{d.business_name || '-'}</span></td>
                     <td style={{ ...styles.td, color: '#6b7280', fontSize: 13 }}>{d.email}</td>
                     <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.pill,
-                          background: planColors[d.plan?.toLowerCase()] || '#e5e7eb',
-                          color: '#fff',
-                        }}
-                      >
-                        {d.plan || '—'}
+                      <span style={{ ...styles.pill, background: planColors[d.plan?.toLowerCase()] || '#e5e7eb', color: '#fff' }}>
+                        {d.plan || '-'}
                       </span>
                     </td>
                     <td style={styles.td}>
-                      <span style={{ ...styles.pill, background: sc.bg, color: sc.text }}>
-                        {d.status || '—'}
-                      </span>
+                      <span style={{ ...styles.pill, background: sc.bg, color: sc.text }}>{d.status || '-'}</span>
                     </td>
                     <td style={{ ...styles.td, color: '#9ca3af', fontSize: 12 }}>
-                      {d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}
+                      {d.created_at ? new Date(d.created_at).toLocaleDateString() : '-'}
                     </td>
                   </tr>
                 );
@@ -251,5 +200,27 @@ function AccessDenied() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: '100vh', background: '#f9fafb', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', padding: '0 0 48px 0' },
-  header: { background: '#0f172a', color: '#fff', padding: '24px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }, 
- 
+  header: { background: '#0f172a', color: '#fff', padding: '24px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  h1: { margin: 0, fontSize: 22, fontWeight: 700, color: '#fff' },
+  subtitle: { margin: '4px 0 0', fontSize: 13, color: '#94a3b8' },
+  badge: { background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 700, letterSpacing: 1, padding: '4px 10px', borderRadius: 4 },
+  cardRow: { display: 'flex', gap: 16, padding: '24px 32px 0', flexWrap: 'wrap' as const },
+  card: { background: '#fff', borderRadius: 10, padding: '18px 24px', flex: '1 1 140px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)' },
+  cardLabel: { margin: 0, fontSize: 12, color: '#6b7280', fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  cardValue: { margin: '8px 0 4px', fontSize: 28, fontWeight: 700 },
+  cardSub: { margin: 0, fontSize: 12, color: '#9ca3af' },
+  section: { margin: '24px 32px 0', background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', overflow: 'hidden' },
+  tableHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #f3f4f6', flexWrap: 'wrap' as const, gap: 12 },
+  h2: { margin: 0, fontSize: 16, fontWeight: 600, color: '#111827' },
+  filters: { display: 'flex', gap: 10, flexWrap: 'wrap' as const },
+  searchInput: { border: '1px solid #e5e7eb', borderRadius: 7, padding: '8px 12px', fontSize: 13, outline: 'none', minWidth: 220, color: '#374151' },
+  select: { border: '1px solid #e5e7eb', borderRadius: 7, padding: '8px 12px', fontSize: 13, outline: 'none', color: '#374151', background: '#fff' },
+  tableWrap: { overflowX: 'auto' as const },
+  table: { width: '100%', borderCollapse: 'collapse' as const },
+  thead: { background: '#f8fafc' },
+  th: { padding: '12px 16px', textAlign: 'left' as const, fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: 0.5, whiteSpace: 'nowrap' as const },
+  tr: { borderBottom: '1px solid #f3f4f6' },
+  td: { padding: '14px 16px', fontSize: 14, color: '#374151', verticalAlign: 'middle' as const },
+  bizName: { fontWeight: 600, color: '#111827' },
+  pill: { display: 'inline-block', padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, textTransform: 'capitalize' as const },
+};
