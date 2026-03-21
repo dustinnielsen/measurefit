@@ -256,7 +256,7 @@ app.post('/send-quote', async (req, res) => {
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: `${dealerName} <quotes@windowfit.io>`,
       to: [quote.customer.email],
-      subject: `Your Quote from ${dealerName} – ${quote.quote_number}`,
+      subject: `Your Quote from ${dealerName} - ${quote.quote_number}`,
       html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
         <div style="background:${brandColor};padding:24px;color:white">
           <h2 style="margin:0">${dealerName}</h2>
@@ -360,5 +360,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`WindowFit server running on http://localhost:${PORT}`);
   console.log(`Stripe integration: READY`);
   console.log(`Webhook endpoint: http://localhost:${PORT}/webhook`);
-}); 
+});
+ 
  
