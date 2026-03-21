@@ -360,4 +360,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`WindowFit server running on http://localhost:${PORT}`);
   console.log(`Stripe integration: READY`);
   console.log(`Webhook endpoint: http://localhost:${PORT}/webhook`);
-});
+}); 
+ 
