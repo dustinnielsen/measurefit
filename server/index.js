@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const { Resend } = require('resend');
 const Stripe = require('stripe');
 
@@ -286,7 +288,77 @@ app.post('/send-quote', async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'WindowFit Server', stripe: 'connected' });
 });
+const ADMIN_SECRET = process.env.ADMIN_SECRET; // add this to Railway env vars
 
+function requireAdminSecret(req, res, next) {
+  const token = req.headers['x-admin-secret'];
+  if (!token || token !== ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+}
+
+// GET /api/admin/dealers
+app.get('/api/admin/dealers', requireAdminSecret, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('dealers')
+      .select('id, business_name, email, plan, status, stripe_customer_id, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ dealers: data });
+  } catch (err) {
+    console.error('Admin dealers error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/mrr
+app.get('/api/admin/mrr', requireAdminSecret, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('dealers')
+      .select('plan, status')
+      .eq('status', 'active');
+
+    if (error) throw error;
+
+    const planPrices = { basic: 79, pro: 149, enterprise: 299 };
+    const counts = { basic: 0, pro: 0, enterprise: 0 };
+
+    for (const dealer of data) {
+      const plan = dealer.plan?.toLowerCase();
+      if (counts[plan] !== undefined) counts[plan]++;
+    }
+
+    const mrr = Object.entries(counts).reduce((sum, [plan, count]) => {
+      return sum + count * (planPrices[plan] || 0);
+    }, 0);
+
+    res.json({ mrr, counts, total_active: data.length });
+  } catch (err) {
+    console.error('Admin MRR error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/recent-signups
+app.get('/api/admin/recent-signups', requireAdminSecret, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('dealers')
+      .select('id, business_name, email, plan, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+    res.json({ signups: data });
+  } catch (err) {
+    console.error('Admin recent signups error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`WindowFit server running on http://localhost:${PORT}`);
