@@ -1,13 +1,349 @@
-﻿import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Modal, FlatList, TextInput,
+  Dimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { roomsService, productsService, supabase } from '../lib/supabase';
 import type { Window as WFWindow } from '../lib/supabase';
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COLOR NAME → HEX LOOKUP
+// ─────────────────────────────────────────────────────────────────────────────
+const COLOR_MAP: Record<string, string> = {
+  'White':          '#F5F5F0',
+  'Bright White':   '#FAFAFA',
+  'Antique White':  '#F5EDD6',
+  'Cotton':         '#F0EDE4',
+  'Ivory':          '#FFF8E7',
+  'Cream':          '#FDF6E3',
+  'Linen':          '#E8DCC8',
+  'Almond':         '#EFDECD',
+  'Antique':        '#E8D5B0',
+  'Parchment':      '#F2E8D5',
+  'Stone':          '#B0A898',
+  'Pebble':         '#9E9890',
+  'Driftwood':      '#A89880',
+  'Warm Gray':      '#9E9488',
+  'Slate':          '#7A8490',
+  'Slate Gray':     '#6E7F80',
+  'Pewter':         '#8A8A8A',
+  'Silver':         '#C0C0C0',
+  'Satin Silver':   '#B8B8C0',
+  'Matte White':    '#F0F0F0',
+  'Charcoal':       '#4A4A4A',
+  'Graphite':       '#3D3D3D',
+  'Sand':           '#C8B89A',
+  'Dune':           '#C4A882',
+  'Caramel':        '#C68642',
+  'Mocha':          '#6F4E37',
+  'Espresso':       '#3C2415',
+  'Chestnut':       '#954535',
+  'Walnut':         '#5C4033',
+  'Mahogany':       '#C04000',
+  'Natural Stain':  '#A0785A',
+  'Golden Oak':     '#C8A060',
+  'Bamboo':         '#D4C5A9',
+  'Wheat':          '#F5DEB3',
+  'Honey':          '#D4A020',
+  'Terra':          '#C17A50',
+  'Terra Cotta':    '#C26A4A',
+  'Sienna':         '#A0522D',
+  'Rust':           '#B7410E',
+  'Navy':           '#1B2A4A',
+  'Midnight':       '#1A1A2E',
+  'Indigo':         '#3D3580',
+  'Ocean':          '#006994',
+  'Sky':            '#87CEEB',
+  'Sage':           '#8FAF8F',
+  'Moss':           '#6B7C4F',
+  'Forest':         '#355E3B',
+  'Jade':           '#00A86B',
+  'Mint':           '#98D4C0',
+  'Burgundy':       '#800020',
+  'Wine':           '#722F37',
+  'Rose':           '#E8A0A0',
+  'Blush':          '#F4C2C2',
+  'Black':          '#1A1A1A',
+  'Onyx':           '#0F0F0F',
+  'Ebony':          '#555D50',
+  'Dusk':           '#8B7D8B',
+  'Champagne':      '#F7E7CE',
+  'Natural Linen':  '#DDD0B8',
+  'Warm White':     '#FDF8F0',
+  'Alabaster':      '#F2F0EB',
+  'Bronze':         '#8C6A3F',
+  'Custom Paint Match': '#D0CCC8',
+};
+
+function colorNameToHex(name: string): string {
+  if (COLOR_MAP[name]) return COLOR_MAP[name];
+  const lower = name.toLowerCase();
+  const match = Object.keys(COLOR_MAP).find(
+    k => lower.includes(k.toLowerCase()) || k.toLowerCase().includes(lower)
+  );
+  return match ? COLOR_MAP[match] : '#C8C0B8';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OUTDOOR SCENE — rendered into a fixed-size View
+// ─────────────────────────────────────────────────────────────────────────────
+function OutdoorScene({ paneW, paneH }: { paneW: number; paneH: number }) {
+  return (
+    <>
+      {/* Sky */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#87CEEB' }} />
+      {/* Horizon */}
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: paneH * 0.45, backgroundColor: '#B8DFF5' }} />
+      {/* Sun */}
+      <View style={{ position: 'absolute', top: paneH * 0.08, right: paneW * 0.2, width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFE566' }} />
+      {/* Far hill left */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.22, left: -10, width: paneW * 0.6, height: paneH * 0.28, backgroundColor: '#8BB88A', borderTopLeftRadius: 80, borderTopRightRadius: 120 }} />
+      {/* Far hill right */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.2, right: -10, width: paneW * 0.55, height: paneH * 0.24, backgroundColor: '#7AAD79', borderTopLeftRadius: 100, borderTopRightRadius: 60 }} />
+      {/* Ground */}
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: paneH * 0.22, backgroundColor: '#6B9E5E' }} />
+      {/* Tree 1 trunk */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.22, left: paneW * 0.15, width: 10, height: paneH * 0.25, backgroundColor: '#7B5C3A' }} />
+      {/* Tree 1 canopy */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.38, left: paneW * 0.04, width: 56, height: 56, borderRadius: 28, backgroundColor: '#4A8C45' }} />
+      {/* Tree 2 trunk */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.22, right: paneW * 0.22, width: 7, height: paneH * 0.18, backgroundColor: '#7B5C3A' }} />
+      {/* Tree 2 canopy */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.33, right: paneW * 0.13, width: 40, height: 40, borderRadius: 20, backgroundColor: '#5A9E55' }} />
+      {/* House body */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.22, right: paneW * 0.05, width: 60, height: 40, backgroundColor: '#C0856A' }} />
+      {/* House roof */}
+      <View style={{ position: 'absolute', bottom: paneH * 0.355, right: paneW * 0.02, width: 0, height: 0, borderLeftWidth: 33, borderRightWidth: 33, borderBottomWidth: 22, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#A0654A' }} />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WINDOW CONFIGURATOR
+// ─────────────────────────────────────────────────────────────────────────────
+interface ConfiguratorProps {
+  colorName: string | null;
+  category: string;
+  productName: string;
+}
+
+function WindowConfigurator({ colorName, category, productName }: ConfiguratorProps) {
+  const hex = colorName ? colorNameToHex(colorName) : '#E8DCC8';
+  const isShutter = category === 'Shutter';
+  const isCellular = category === 'Cellular';
+  const isRoman = category === 'Roman';
+
+  const nameLower = productName.toLowerCase();
+  const isLightFiltering =
+    nameLower.includes('sheer') ||
+    nameLower.includes('light filter') ||
+    nameLower.includes('solar') ||
+    nameLower.includes('privacy') ||
+    nameLower.includes('silhouette') ||
+    nameLower.includes('pirouette') ||
+    nameLower.includes('luminette');
+  const isBlackout =
+    nameLower.includes('blackout') ||
+    nameLower.includes('room dark');
+
+  const W = SCREEN_WIDTH - 64;
+  const H = Math.round(W * 0.62);
+  const FRAME = 14;
+  const paneW = W - FRAME * 2;
+  const paneH = H - FRAME * 2;
+
+  const darken = (h: string, amount: number) => {
+    const num = parseInt(h.replace('#', ''), 16);
+    const r = Math.max(0, (num >> 16) - amount);
+    const g = Math.max(0, ((num >> 8) & 0xff) - amount);
+    const b = Math.max(0, (num & 0xff) - amount);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+  const shadeDark = darken(hex, 20);
+
+  const renderBlindOverlay = (pW: number, pH: number) => {
+    if (isShutter) {
+      const slatCount = 8;
+      const slatH = pH / slatCount;
+      return Array.from({ length: slatCount }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', left: 0, right: 0,
+          top: i * slatH, height: slatH - 1.5,
+          backgroundColor: i % 2 === 0 ? hex : shadeDark,
+          borderRadius: 2,
+        }} />
+      ));
+    }
+    if (isCellular) {
+      const cellH = 18;
+      const rows = Math.floor(pH / cellH);
+      return Array.from({ length: rows }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', left: 0, right: 0,
+          top: i * cellH, height: cellH - 2,
+          backgroundColor: hex,
+          borderBottomWidth: 1.5, borderBottomColor: shadeDark,
+        }} />
+      ));
+    }
+    if (isRoman) {
+      const foldCount = 5;
+      const foldH = pH / foldCount;
+      return Array.from({ length: foldCount }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', left: 0, right: 0,
+          top: i * foldH, height: foldH,
+          backgroundColor: i % 2 === 0 ? hex : shadeDark,
+          borderBottomWidth: 2, borderBottomColor: 'rgba(0,0,0,0.08)',
+        }} />
+      ));
+    }
+    // Roller
+    const lineCount = 20;
+    const lineH = pH / lineCount;
+    return (
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: hex }} />
+        {Array.from({ length: lineCount }).map((_, i) => (
+          <View key={i} style={{
+            position: 'absolute', left: 0, right: 0,
+            top: i * lineH, height: 0.5,
+            backgroundColor: 'rgba(0,0,0,0.06)',
+          }} />
+        ))}
+      </View>
+    );
+  };
+
+  // Label for bottom of configurator
+  const modeLabel = isLightFiltering
+    ? '☀️ Light filtering'
+    : isBlackout
+    ? '🌙 Blackout / Room darkening'
+    : isShutter
+    ? '🏠 Shutter'
+    : isCellular
+    ? '🔷 Cellular'
+    : isRoman
+    ? '📋 Roman'
+    : '🪟 Standard';
+
+  return (
+    <View style={configuratorStyles.wrapper}>
+      <View style={configuratorStyles.labelRow}>
+        <View style={[configuratorStyles.colorDot, { backgroundColor: hex }]} />
+        <Text style={configuratorStyles.colorLabel}>
+          {colorName ?? 'Select a color to preview'}
+        </Text>
+        <Text style={configuratorStyles.categoryTag}>{category}</Text>
+      </View>
+
+      <View style={[configuratorStyles.frame, { width: W, height: H }]}>
+        {/* Window frame */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#2C2C2C', borderRadius: 4 }} />
+
+        {/* Glass pane */}
+        <View style={{ position: 'absolute', top: FRAME, left: FRAME, right: FRAME, bottom: FRAME, overflow: 'hidden' }}>
+
+          {/* ── BLACKOUT: just solid color ── */}
+          {isBlackout && (
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: hex }} />
+          )}
+
+          {/* ── STANDARD / LIGHT FILTERING: outdoor scene + overlay ── */}
+          {!isBlackout && (
+            <>
+              {/* Outdoor scene wrapped in its own container */}
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+                <OutdoorScene paneW={paneW} paneH={paneH} />
+              </View>
+
+              {/* For light filtering: dark scrim over the ENTIRE scene before blind renders */}
+              {isLightFiltering && (
+                <View style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  backgroundColor: '#000000',
+                  opacity: 0.72,
+                }} />
+              )}
+
+              {/* Blind texture overlay */}
+              <View style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                overflow: 'hidden',
+                opacity: isLightFiltering ? 0.55 : 0.78,
+              }}>
+                {renderBlindOverlay(paneW, paneH)}
+              </View>
+
+              {/* Warm tint for sheer */}
+              {isLightFiltering && (
+                <View style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  backgroundColor: 'rgba(255,240,200,0.08)',
+                }} />
+              )}
+
+              {/* Glass sheen */}
+              <View style={{
+                position: 'absolute', top: 0, left: 0,
+                width: paneW * 0.25, height: paneH,
+                backgroundColor: 'rgba(255,255,255,0.04)',
+              }} />
+            </>
+          )}
+        </View>
+
+        {/* Frame highlight */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 4, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)' }} />
+      </View>
+
+      <Text style={configuratorStyles.productLabel} numberOfLines={1}>
+        {modeLabel} · {productName}
+      </Text>
+    </View>
+  );
+}
+
+const configuratorStyles = StyleSheet.create({
+  wrapper: {
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
+    alignItems: 'center', backgroundColor: '#0A0F1E',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 10,
+  },
+  labelRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+  },
+  colorDot: {
+    width: 14, height: 14, borderRadius: 7,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+  },
+  colorLabel: { color: '#fff', fontSize: 14, fontWeight: '700', flex: 1 },
+  categoryTag: {
+    color: '#1E6FFF', fontSize: 11, fontWeight: '700',
+    letterSpacing: 0.5, textTransform: 'uppercase',
+    backgroundColor: 'rgba(30,111,255,0.12)',
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+  },
+  frame: {
+    borderRadius: 4, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
+  },
+  productLabel: {
+    color: 'rgba(255,255,255,0.35)', fontSize: 11,
+    alignSelf: 'flex-start', fontStyle: 'italic',
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
 const CATEGORIES = ['All', 'Roller', 'Shutter', 'Cellular', 'Roman', 'Natural', 'Other'];
 const BRANDS = ['All Brands', 'Norman', 'Hunter Douglas', 'Other'];
 
@@ -28,12 +364,19 @@ function categoryEmoji(cat: string) {
   return map[cat] ?? '🪟';
 }
 
-function parseColors(raw: any): { name: string; hex: string }[] {
+function parseColors(raw: any): { name: string }[] {
   if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  try { return JSON.parse(raw); } catch { return []; }
+  let arr = raw;
+  if (typeof raw === 'string') {
+    try { arr = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map((c: any) => typeof c === 'string' ? { name: c } : c);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOM DETAIL SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function RoomDetailScreen({ route, navigation }: any) {
   const { roomId, roomName } = route.params;
   const { dealer } = useAuth();
@@ -42,7 +385,6 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Product picker
   const [pickerVisible, setPickerVisible] = useState(false);
   const [targetWindowId, setTargetWindowId] = useState<string | null>(null);
   const [products, setProducts] = useState<any[]>([]);
@@ -51,11 +393,9 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeBrand, setActiveBrand] = useState('All Brands');
 
-  // Color picker
   const [colorPickerProduct, setColorPickerProduct] = useState<any | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
 
-  // Scope chooser
   const [scopeVisible, setScopeVisible] = useState(false);
   const [pendingProduct, setPendingProduct] = useState<{ id: string; name: string } | null>(null);
 
@@ -65,8 +405,6 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const lastProductRef = useRef<{ id: string; name: string } | null>(null);
   const windowsRef = useRef<WFWindow[]>([]);
   windowsRef.current = windows;
-
-  // ── Data ──────────────────────────────────────────────────────────
 
   const loadWindows = async () => {
     if (!dealer) return;
@@ -156,16 +494,12 @@ export default function RoomDetailScreen({ route, navigation }: any) {
     setTimeout(() => setToast(''), 3000);
   };
 
-  // ── Quick-apply last product ──────────────────────────────────────
-
   const quickApply = async (windowId: string) => {
     if (!lastProductRef.current) return;
     setPendingProduct(lastProductRef.current);
     setTargetWindowId(windowId);
     setScopeVisible(true);
   };
-
-  // ── Filtered products ─────────────────────────────────────────────
 
   const filteredProducts = products.filter(p => {
     if (activeCategory !== 'All' && p.category !== activeCategory) return false;
@@ -174,15 +508,15 @@ export default function RoomDetailScreen({ route, navigation }: any) {
       const q = search.toLowerCase();
       const inName = p.name.toLowerCase().includes(q);
       const inDesc = (p.description ?? '').toLowerCase().includes(q);
-      const inColors = parseColors(p.available_colors).some((c: any) => c.name.toLowerCase().includes(q));
+      const inColors = parseColors(p.available_colors).some((c: any) =>
+        (typeof c === 'string' ? c : c.name).toLowerCase().includes(q)
+      );
       if (!inName && !inDesc && !inColors) return false;
     }
     return true;
   });
 
   const unassignedCount = windows.filter(w => !w.product_id).length;
-
-  // ── Render ────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -323,7 +657,6 @@ export default function RoomDetailScreen({ route, navigation }: any) {
             </TouchableOpacity>
           </View>
 
-          {/* Search */}
           <View style={styles.modalSearch}>
             <TextInput
               value={search}
@@ -403,9 +736,12 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                       ) : null}
                       {colors.length > 0 && (
                         <View style={{ flexDirection: 'row', gap: 4, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                          {colors.slice(0, 8).map((c: any) => (
-                            <View key={c.name} style={[styles.colorSwatch, { backgroundColor: c.hex }]} />
-                          ))}
+                          {colors.slice(0, 8).map((c: any) => {
+                            const cName = typeof c === 'string' ? c : c.name;
+                            return (
+                              <View key={cName} style={[styles.colorSwatch, { backgroundColor: colorNameToHex(cName) }]} />
+                            );
+                          })}
                           {colors.length > 8 && (
                             <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>+{colors.length - 8}</Text>
                           )}
@@ -422,7 +758,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
         </View>
       </Modal>
 
-      {/* ── Color / Fabric Picker Modal ──────────────────────────── */}
+      {/* ── Color Picker Modal with Configurator ─────────────────── */}
       <Modal visible={!!colorPickerProduct} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
@@ -439,18 +775,30 @@ export default function RoomDetailScreen({ route, navigation }: any) {
             </TouchableOpacity>
           </View>
 
+          {colorPickerProduct && (
+            <WindowConfigurator
+              colorName={selectedColor}
+              category={colorPickerProduct.category ?? 'Roller'}
+              productName={colorPickerProduct.name}
+            />
+          )}
+
           <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }}>
-            {parseColors(colorPickerProduct?.available_colors).map((c: any) => (
-              <TouchableOpacity
-                key={c.name}
-                style={[styles.colorRow, selectedColor === c.name && styles.colorRowActive]}
-                onPress={() => setSelectedColor(c.name)}
-              >
-                <View style={[styles.colorSwatchLarge, { backgroundColor: c.hex }]} />
-                <Text style={styles.colorRowName}>{c.name}</Text>
-                {selectedColor === c.name && <Text style={{ color: '#30D158', fontSize: 20 }}>✓</Text>}
-              </TouchableOpacity>
-            ))}
+            {parseColors(colorPickerProduct?.available_colors).map((c: any) => {
+              const cName = typeof c === 'string' ? c : c.name;
+              const cHex = colorNameToHex(cName);
+              return (
+                <TouchableOpacity
+                  key={cName}
+                  style={[styles.colorRow, selectedColor === cName && styles.colorRowActive]}
+                  onPress={() => setSelectedColor(cName)}
+                >
+                  <View style={[styles.colorSwatchLarge, { backgroundColor: cHex }]} />
+                  <Text style={styles.colorRowName}>{cName}</Text>
+                  {selectedColor === cName && <Text style={{ color: '#30D158', fontSize: 20 }}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
             <View style={{ height: 100 }} />
           </ScrollView>
 
@@ -489,19 +837,16 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                 {pendingProduct.name}
               </Text>
             )}
-
             <TouchableOpacity style={styles.scopeOption} onPress={() => applyProduct('single')}>
               <Text style={styles.scopeOptionTitle}>This window only</Text>
               <Text style={styles.scopeOptionDesc}>Apply to the selected window</Text>
             </TouchableOpacity>
-
             {unassignedCount > 1 && (
               <TouchableOpacity style={styles.scopeOption} onPress={() => applyProduct('unassigned')}>
                 <Text style={styles.scopeOptionTitle}>All unassigned windows</Text>
                 <Text style={styles.scopeOptionDesc}>{unassignedCount} windows without a product</Text>
               </TouchableOpacity>
             )}
-
             <TouchableOpacity style={[styles.scopeOption, styles.scopeOptionAll]} onPress={() => applyProduct('all')}>
               <Text style={styles.scopeOptionTitle}>All {windows.length} windows in room</Text>
               <Text style={styles.scopeOptionDesc}>Replaces existing assignments</Text>
@@ -513,6 +858,9 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#080C14' },
   header: {
@@ -524,24 +872,20 @@ const styles = StyleSheet.create({
   backBtnText: { color: '#0A84FF', fontSize: 16 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 60, gap: 12 },
-
   assigningBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#0A84FF', padding: 12, paddingHorizontal: 20,
   },
   assigningText: { color: 'white', fontWeight: '600', fontSize: 14 },
-
   toast: {
     backgroundColor: '#30D158', marginHorizontal: 16, borderRadius: 12,
     padding: 12, alignItems: 'center',
   },
   toastText: { color: 'white', fontWeight: '700', fontSize: 13 },
-
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyEmoji: { fontSize: 56 },
   emptyTitle: { color: 'white', fontSize: 20, fontWeight: '800' },
   emptyDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center', lineHeight: 22, maxWidth: 280 },
-
   lastProductBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(48,209,88,0.08)', borderRadius: 10, padding: 10,
@@ -549,7 +893,6 @@ const styles = StyleSheet.create({
   },
   lastProductLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
   lastProductName: { color: '#30D158', fontSize: 12, fontWeight: '700', flex: 1 },
-
   windowCard: {
     backgroundColor: '#0D1520', borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 12,
@@ -559,7 +902,6 @@ const styles = StyleSheet.create({
   windowMeta: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
   deleteBtn: { padding: 4 },
   deleteBtnText: { color: 'rgba(255,255,255,0.25)', fontSize: 16 },
-
   productAssigned: {
     flexDirection: 'row', alignItems: 'flex-start',
     backgroundColor: 'rgba(10,132,255,0.08)', borderRadius: 12, padding: 12,
@@ -578,7 +920,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6, paddingHorizontal: 12,
   },
   removeBtnText: { color: 'rgba(255,69,58,0.8)', fontSize: 12, fontWeight: '600' },
-
   productUnassigned: { flexDirection: 'row', gap: 10 },
   assignBtn: {
     flex: 1, backgroundColor: '#0A84FF', borderRadius: 12,
@@ -591,14 +932,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)',
   },
   quickApplyText: { color: '#30D158', fontWeight: '600', fontSize: 12 },
-
   applyAllBtn: {
     backgroundColor: 'rgba(48,209,88,0.08)', borderRadius: 12, padding: 14,
     alignItems: 'center', borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)',
   },
   applyAllBtnText: { color: '#30D158', fontSize: 12, fontWeight: '700' },
-
-  // Modal
   modal: { flex: 1, backgroundColor: '#080C14' },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -611,15 +949,12 @@ const styles = StyleSheet.create({
     width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
   },
   modalCloseText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
-
   modalSearch: { padding: 16, paddingBottom: 8 },
   searchInput: {
     backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12,
     color: 'white', fontSize: 15, padding: 12,
   },
-
-  // Brand filter
   filterRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
   brandChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
@@ -629,8 +964,6 @@ const styles = StyleSheet.create({
   brandChipActive: { backgroundColor: 'rgba(255,214,10,0.15)', borderColor: '#FFD60A' },
   brandChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
   brandChipTextActive: { color: '#FFD60A', fontWeight: '700' },
-
-  // Category filter
   categories: { paddingHorizontal: 16, gap: 8, paddingBottom: 12 },
   catChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
@@ -640,8 +973,6 @@ const styles = StyleSheet.create({
   catChipActive: { backgroundColor: 'rgba(10,132,255,0.2)', borderColor: '#0A84FF' },
   catChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
   catChipTextActive: { color: '#0A84FF', fontWeight: '700' },
-
-  // Product list
   productList: { paddingHorizontal: 16, paddingTop: 4 },
   emptyText: { color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 40, fontSize: 14 },
   productRow: {
@@ -652,16 +983,12 @@ const styles = StyleSheet.create({
   productRowName: { color: 'white', fontSize: 14, fontWeight: '700', flexShrink: 1 },
   productRowDesc: { color: 'rgba(255,255,255,0.35)', fontSize: 11, lineHeight: 16, marginTop: 3 },
   productRowPrice: { color: '#0A84FF', fontWeight: '700', fontSize: 14, minWidth: 44, textAlign: 'right' },
-
-  // Brand badges
   brandBadge: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
     backgroundColor: 'rgba(48,209,88,0.15)',
   },
   brandBadgeHD: { backgroundColor: 'rgba(10,132,255,0.15)' },
   brandBadgeText: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700' },
-
-  // Color swatches
   colorSwatch: {
     width: 16, height: 16, borderRadius: 8,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
@@ -677,7 +1004,6 @@ const styles = StyleSheet.create({
   },
   colorRowActive: { borderColor: '#30D158', backgroundColor: 'rgba(48,209,88,0.08)' },
   colorRowName: { color: 'white', fontSize: 15, fontWeight: '600', flex: 1 },
-
   confirmBtn: {
     backgroundColor: '#0A84FF', borderRadius: 14,
     paddingVertical: 15, alignItems: 'center',
@@ -688,8 +1014,6 @@ const styles = StyleSheet.create({
     paddingVertical: 13, alignItems: 'center',
   },
   skipColorText: { color: 'rgba(255,255,255,0.5)', fontWeight: '600', fontSize: 14 },
-
-  // Scope chooser
   scopeOption: {
     backgroundColor: '#0D1520', borderRadius: 14, padding: 18,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
