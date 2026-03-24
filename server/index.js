@@ -364,7 +364,7 @@ app.post('/send-payment-confirmed', async (req, res) => {
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: 'WindowFit <hello@windowfit.io>',
       to: [dealer.email],
-      subject: `You're all set — WindowFit ${planLabel} is active`,
+      subject: `Welcome to WindowFit ${planLabel}, ${dealer.owner_name?.split(' ')[0] ?? dealer.name}!`,
       html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
         <div style="background:#1E6FFF;padding:24px;color:white">
           <h2 style="margin:0">WindowFit</h2>
