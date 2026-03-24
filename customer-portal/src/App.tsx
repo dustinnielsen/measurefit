@@ -3,7 +3,7 @@ import QuotePage from './QuotePage';
 import SignupPage from './SignupPage';
 import BillingSuccessPage from './BillingSuccessPage';
 import AdminDashboard from './AdminDashboard';
-import HomePage from "./pages/HomePage";
+import HomePage from "./Pages/HomePage";
 
 export default function App() {
   return (
