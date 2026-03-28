@@ -515,3 +515,74 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', function() {
   console.log('WindowFit server running on port ' + PORT);
 });
+// GET /api/tenant/config
+// Returns brand config for the authenticated dealer's vertical
+// GET /api/tenant/config/:dealerId
+app.get('/api/tenant/config/:dealerId', async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+
+    if (!dealerId) {
+      return res.status(400).json({ error: 'dealerId is required' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('dealers')
+      .select(`
+        id,
+        name,
+        vertical_brand_id,
+        tenant_config,
+        vertical_brands (
+          id,
+          brand_key,
+          brand_name,
+          domain,
+          primary_color,
+          secondary_color,
+          accent_color,
+          logo_url,
+          product_noun,
+          product_noun_plural,
+          measurement_unit_label
+        )
+      `)
+      .eq('id', dealerId)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    const brand = data.vertical_brands || {
+      brand_key: 'windowfit',
+      brand_name: 'WindowFit',
+      primary_color: '#2563EB',
+      secondary_color: '#1D4ED8',
+      accent_color: '#BFDBFE',
+      logo_url: null,
+      product_noun: 'window',
+      product_noun_plural: 'windows',
+      measurement_unit_label: 'window opening'
+    };
+
+    return res.json({
+      dealer_id: data.id,
+      dealer_name: data.name,
+      brand_key: brand.brand_key,
+      brand_name: brand.brand_name,
+      primary_color: brand.primary_color,
+      secondary_color: brand.secondary_color,
+      accent_color: brand.accent_color,
+      logo_url: brand.logo_url,
+      product_noun: brand.product_noun,
+      product_noun_plural: brand.product_noun_plural,
+      measurement_unit_label: brand.measurement_unit_label,
+      tenant_config: data.tenant_config || {}
+    });
+
+  } catch (err) {
+    console.error('Tenant config error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
