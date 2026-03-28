@@ -1,20 +1,31 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { TenantProvider } from './context/TenantContext';
 import QuotePage from './QuotePage';
 import SignupPage from './SignupPage';
 import BillingSuccessPage from './BillingSuccessPage';
 import AdminDashboard from './AdminDashboard';
-import HomePage from "./Pages/HomePage";
+import HomePage from './Pages/HomePage';
 
 export default function App() {
+  const [dealerId, setDealerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('dealer_id');
+    if (stored) setDealerId(stored);
+  }, []);
+
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/quote/:token" element={<QuoteTokenWrapper />} />
-      <Route path="/billing-success" element={<BillingSuccessPage />} />
-      <Route path="/admin" element={<AdminDashboard />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <TenantProvider dealerId={dealerId}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/quote/:token" element={<QuoteTokenWrapper />} />
+        <Route path="/billing-success" element={<BillingSuccessPage />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </TenantProvider>
   );
 }
 
