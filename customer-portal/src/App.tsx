@@ -5,6 +5,7 @@ import QuotePage from './QuotePage';
 import SignupPage from './SignupPage';
 import BillingSuccessPage from './BillingSuccessPage';
 import AdminDashboard from './AdminDashboard';
+import SettingsPage from './SettingsPage';
 import HomePage from './Pages/HomePage';
 import MeasureFitHomePage from './Pages/MeasureFitHomePage';
 
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/quote/:token" element={<QuoteTokenWrapper />} />
         <Route path="/billing-success" element={<BillingSuccessPage />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </TenantProvider>
