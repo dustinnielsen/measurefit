@@ -26,6 +26,7 @@ const PLANS = {
   'price_1TCQWmLvxQtMPVpkLCKPkb2G': { name: 'enterprise', label: 'Enterprise', price: 29900 },
 };
 
+// ─── STRIPE CHECKOUT ──────────────────────────────────────────────────────────
 app.post('/create-checkout-session', async (req, res) => {
   const { priceId, dealerId, dealerEmail, dealerName } = req.body;
   if (!priceId || !dealerId) {
@@ -49,6 +50,7 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
+// ─── STRIPE PORTAL ────────────────────────────────────────────────────────────
 app.post('/create-portal-session', async (req, res) => {
   const { dealerId } = req.body;
   try {
@@ -73,6 +75,7 @@ app.post('/create-portal-session', async (req, res) => {
   }
 });
 
+// ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
 app.get('/subscription/:dealerId', async (req, res) => {
   const { dealerId } = req.params;
   try {
@@ -94,6 +97,7 @@ app.get('/subscription/:dealerId', async (req, res) => {
   }
 });
 
+// ─── STRIPE WEBHOOK ───────────────────────────────────────────────────────────
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 app.post('/webhook', async (req, res) => {
@@ -129,7 +133,6 @@ app.post('/webhook', async (req, res) => {
 
         console.log(`[OK] Dealer ${dealerId} activated on ${plan?.label} plan`);
 
-        // Send welcome + payment confirmed emails
         try {
           await fetch(`http://localhost:${PORT}/send-welcome`, {
             method: 'POST',
@@ -231,6 +234,7 @@ app.post('/webhook', async (req, res) => {
   res.json({ received: true });
 });
 
+// ─── SEND QUOTE EMAIL ─────────────────────────────────────────────────────────
 app.post('/send-quote', async (req, res) => {
   const { quoteId } = req.body;
   if (!quoteId) return res.status(400).json({ error: 'quoteId is required' });
@@ -295,6 +299,7 @@ app.post('/send-quote', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
 // ─── WELCOME EMAIL ────────────────────────────────────────────────────────────
 app.post('/send-welcome', async (req, res) => {
   const { dealerId } = req.body;
@@ -437,10 +442,13 @@ app.post('/send-trial-reminder', async (req, res) => {
   }
 });
 
+// ─── HEALTH ───────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'WindowFit Server', stripe: 'connected' });
 });
-const ADMIN_SECRET = process.env.ADMIN_SECRET; // add this to Railway env vars
+
+// ─── ADMIN AUTH ───────────────────────────────────────────────────────────────
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 function requireAdminSecret(req, res, next) {
   const token = req.headers['x-admin-secret'];
@@ -450,7 +458,7 @@ function requireAdminSecret(req, res, next) {
   next();
 }
 
-// GET /api/admin/dealers
+// ─── ADMIN ROUTES ─────────────────────────────────────────────────────────────
 app.get('/api/admin/dealers', requireAdminSecret, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -479,7 +487,6 @@ app.get('/api/admin/dealers', requireAdminSecret, async (req, res) => {
   }
 });
 
-// GET /api/admin/mrr
 app.get('/api/admin/mrr', requireAdminSecret, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -508,7 +515,6 @@ app.get('/api/admin/mrr', requireAdminSecret, async (req, res) => {
   }
 });
 
-// GET /api/admin/recent-signups
 app.get('/api/admin/recent-signups', requireAdminSecret, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -524,12 +530,11 @@ app.get('/api/admin/recent-signups', requireAdminSecret, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// DELETE /api/admin/dealers/:id
+
 app.delete('/api/admin/dealers/:id', requireAdminSecret, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Safety check — prevent deleting NSS (the founding dealer)
     if (id === '064bead2-5fd9-4f8f-a06a-13b4e48a2f8c') {
       return res.status(403).json({ error: 'Cannot delete the founding dealer account.' });
     }
@@ -546,13 +551,8 @@ app.delete('/api/admin/dealers/:id', requireAdminSecret, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, '0.0.0.0', function() {
-  console.log('WindowFit server running on port ' + PORT);
-});
-// GET /api/tenant/config
-// Returns brand config for the authenticated dealer's vertical
-// GET /api/tenant/config/:dealerId
+
+// ─── TENANT CONFIG ────────────────────────────────────────────────────────────
 app.get('/api/tenant/config/:dealerId', async (req, res) => {
   try {
     const { dealerId } = req.params;
@@ -602,7 +602,7 @@ app.get('/api/tenant/config/:dealerId', async (req, res) => {
       measurement_unit_label: 'window opening'
     };
 
-   return res.json({
+    return res.json({
       dealer_id: data.id,
       dealer_name: data.name,
       subscription_tier: data.subscription_tier || 'basic',
@@ -622,4 +622,116 @@ app.get('/api/tenant/config/:dealerId', async (req, res) => {
     console.error('Tenant config error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// ─── DEALER PRICING ───────────────────────────────────────────────────────────
+app.get('/api/dealer/pricing/:dealerId', async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+
+    const [defaultsRes, overridesRes] = await Promise.all([
+      supabaseAdmin
+        .from('dealer_pricing_defaults')
+        .select('*')
+        .eq('dealer_id', dealerId),
+      supabaseAdmin
+        .from('dealer_pricing_overrides')
+        .select('*, products(id, name, category, msrp_cents)')
+        .eq('dealer_id', dealerId),
+    ]);
+
+    if (defaultsRes.error) throw defaultsRes.error;
+    if (overridesRes.error) throw overridesRes.error;
+
+    res.json({
+      defaults: defaultsRes.data || [],
+      overrides: overridesRes.data || [],
+    });
+  } catch (err) {
+    console.error('Dealer pricing GET error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/dealer/pricing/:dealerId/defaults', async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+    const { category, cost_multiplier, markup_percent } = req.body;
+
+    if (!category || cost_multiplier == null || markup_percent == null) {
+      return res.status(400).json({ error: 'category, cost_multiplier, and markup_percent are required' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('dealer_pricing_defaults')
+      .upsert({
+        dealer_id: dealerId,
+        category,
+        cost_multiplier,
+        markup_percent,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'dealer_id,category' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ default: data });
+  } catch (err) {
+    console.error('Dealer pricing defaults PUT error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/dealer/pricing/:dealerId/overrides', async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+    const { product_id, cost_multiplier, markup_percent, custom_price_cents } = req.body;
+
+    if (!product_id) {
+      return res.status(400).json({ error: 'product_id is required' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('dealer_pricing_overrides')
+      .upsert({
+        dealer_id: dealerId,
+        product_id,
+        cost_multiplier: cost_multiplier ?? null,
+        markup_percent: markup_percent ?? null,
+        custom_price_cents: custom_price_cents ?? null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'dealer_id,product_id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ override: data });
+  } catch (err) {
+    console.error('Dealer pricing overrides PUT error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/dealer/pricing/:dealerId/overrides/:productId', async (req, res) => {
+  try {
+    const { dealerId, productId } = req.params;
+
+    const { error } = await supabaseAdmin
+      .from('dealer_pricing_overrides')
+      .delete()
+      .eq('dealer_id', dealerId)
+      .eq('product_id', productId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Dealer pricing override DELETE error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── START SERVER ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, '0.0.0.0', function() {
+  console.log('WindowFit server running on port ' + PORT);
 });
