@@ -524,6 +524,28 @@ app.get('/api/admin/recent-signups', requireAdminSecret, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// DELETE /api/admin/dealers/:id
+app.delete('/api/admin/dealers/:id', requireAdminSecret, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Safety check — prevent deleting NSS (the founding dealer)
+    if (id === '064bead2-5fd9-4f8f-a06a-13b4e48a2f8c') {
+      return res.status(403).json({ error: 'Cannot delete the founding dealer account.' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('dealers')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Admin delete dealer error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', function() {
   console.log('WindowFit server running on port ' + PORT);

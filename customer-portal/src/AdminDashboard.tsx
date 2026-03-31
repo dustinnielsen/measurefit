@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 const API_BASE = import.meta.env.VITE_API_URL || 'https://windowfit-production.up.railway.app';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET;
 
+const NSS_FOUNDER_ID = '064bead2-5fd9-4f8f-a06a-13b4e48a2f8c';
+
 interface VerticalBrand {
   brand_key: string;
   brand_name: string;
@@ -26,7 +28,6 @@ interface MRRData {
   total_active: number;
 }
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
 const TEAL_DARK   = '#0D3B36';
 const TEAL_MID    = '#0F766E';
 const TEAL_ACCENT = '#5EEAD4';
@@ -69,16 +70,16 @@ function adminFetch(path: string) {
   }).then((r) => r.json());
 }
 
-// ── Main dashboard ────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
-  const [authorized, setAuthorized]   = useState<boolean | null>(null);
-  const [dealers, setDealers]         = useState<Dealer[]>([]);
-  const [mrr, setMrr]                 = useState<MRRData | null>(null);
-  const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState('');
+  const [authorized, setAuthorized]     = useState<boolean | null>(null);
+  const [dealers, setDealers]           = useState<Dealer[]>([]);
+  const [mrr, setMrr]                   = useState<MRRData | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
-  const [filterTier, setFilterTier]   = useState('all');
+  const [filterTier, setFilterTier]     = useState('all');
+  const [deleting, setDeleting]         = useState<string | null>(null);
 
   useEffect(() => {
     const password = prompt('Enter admin password:');
@@ -101,31 +102,47 @@ export default function AdminDashboard() {
     });
   }, [authorized]);
 
+  const handleDelete = async (dealer: Dealer) => {
+    const confirmed = window.confirm(
+      `Delete "${dealer.name}"?\n\nThis will permanently remove them from the platform. This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeleting(dealer.id);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/dealers/${dealer.id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-secret': ADMIN_SECRET },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      setDealers((prev) => prev.filter((d) => d.id !== dealer.id));
+    } catch (err: any) {
+      alert(`Failed to delete: ${err.message}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   if (authorized === null) return <LoadingScreen message="Checking access..." />;
   if (authorized === false) return <AccessDenied />;
   if (loading) return <LoadingScreen message="Loading MeasureFit dashboard..." />;
 
-  // ── Derived stats ──────────────────────────────────────────────────────────
   const arr = (n: number) => Math.round(n * 12);
 
-  // Per-module dealer counts
   const moduleCounts: Record<string, number> = {};
   dealers.forEach((d) => {
     const key = d.vertical_brands?.brand_key || 'unknown';
     moduleCounts[key] = (moduleCounts[key] || 0) + 1;
   });
 
-  // Per-tier counts
   const tierCounts = { basic: 0, pro: 0, enterprise: 0 };
   dealers.forEach((d) => {
     const t = (d.subscription_tier || 'basic').toLowerCase() as keyof typeof tierCounts;
     if (t in tierCounts) tierCounts[t]++;
   });
 
-  // Live modules (modules with at least 1 dealer)
   const liveModules = Object.keys(moduleCounts).filter((k) => k !== 'unknown');
 
-  // ── Filtered dealer list ───────────────────────────────────────────────────
   const filtered = dealers.filter((d) => {
     const matchSearch =
       d.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -139,7 +156,7 @@ export default function AdminDashboard() {
   return (
     <div style={S.page}>
 
-      {/* ── TOP NAV ── */}
+      {/* NAV */}
       <div style={S.nav}>
         <div style={S.navLeft}>
           <span style={S.navLogo}>Measure<span style={{ color: TEAL_ACCENT }}>Fit</span></span>
@@ -155,45 +172,23 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── MRR STAT ROW ── */}
+      {/* STAT ROW */}
       {mrr && (
         <div style={S.statRow}>
-          <StatCard
-            label="Platform MRR"
-            value={`$${mrr.mrr.toLocaleString()}`}
-            sub={`$${arr(mrr.mrr).toLocaleString()} ARR`}
-            accent={TEAL_ACCENT}
-            dark
-          />
-          <StatCard
-            label="Active Dealers"
-            value={mrr.total_active}
-            sub={`${dealers.length} total records`}
-            accent={TEAL_ACCENT}
-            dark
-          />
-          <StatCard
-            label="Basic"
-            value={tierCounts.basic}
-            sub={`$${(tierCounts.basic * 79).toLocaleString()}/mo`}
-            accent={TIER_COLORS.basic.text}
-          />
-          <StatCard
-            label="Pro"
-            value={tierCounts.pro}
-            sub={`$${(tierCounts.pro * 149).toLocaleString()}/mo`}
-            accent={TIER_COLORS.pro.text}
-          />
-          <StatCard
-            label="Enterprise"
-            value={tierCounts.enterprise}
-            sub={`$${(tierCounts.enterprise * 299).toLocaleString()}/mo`}
-            accent={TIER_COLORS.enterprise.text}
-          />
+          <StatCard label="Platform MRR" value={`$${mrr.mrr.toLocaleString()}`}
+            sub={`$${arr(mrr.mrr).toLocaleString()} ARR`} accent={TEAL_ACCENT} dark />
+          <StatCard label="Active Dealers" value={mrr.total_active}
+            sub={`${dealers.length} total records`} accent={TEAL_ACCENT} dark />
+          <StatCard label="Basic" value={tierCounts.basic}
+            sub={`$${(tierCounts.basic * 79).toLocaleString()}/mo`} accent={TIER_COLORS.basic.text} />
+          <StatCard label="Pro" value={tierCounts.pro}
+            sub={`$${(tierCounts.pro * 149).toLocaleString()}/mo`} accent={TIER_COLORS.pro.text} />
+          <StatCard label="Enterprise" value={tierCounts.enterprise}
+            sub={`$${(tierCounts.enterprise * 299).toLocaleString()}/mo`} accent={TIER_COLORS.enterprise.text} />
         </div>
       )}
 
-      {/* ── MODULE BREAKDOWN ── */}
+      {/* MODULE CHIPS */}
       <div style={S.moduleSection}>
         <div style={S.moduleSectionHeader}>
           <span style={S.sectionLabel}>Modules</span>
@@ -204,17 +199,13 @@ export default function AdminDashboard() {
             .sort((a, b) => b[1] - a[1])
             .map(([key, count]) => {
               const color = MODULE_COLORS[key] || '#6B7280';
-              const name = key.charAt(0).toUpperCase() + key.slice(1);
+              const name  = key.charAt(0).toUpperCase() + key.slice(1);
               return (
-                <button
-                  key={key}
-                  style={{
-                    ...S.moduleChip,
-                    borderColor: filterModule === key ? color : '#E5E7EB',
-                    background: filterModule === key ? `${color}12` : '#fff',
-                  }}
-                  onClick={() => setFilterModule(filterModule === key ? 'all' : key)}
-                >
+                <button key={key} style={{
+                  ...S.moduleChip,
+                  borderColor: filterModule === key ? color : '#E5E7EB',
+                  background:  filterModule === key ? `${color}12` : '#fff',
+                }} onClick={() => setFilterModule(filterModule === key ? 'all' : key)}>
                   <span style={{ ...S.moduleChipDot, background: color }} />
                   <span style={S.moduleChipName}>{name}</span>
                   <span style={{ ...S.moduleChipCount, color }}>{count}</span>
@@ -227,7 +218,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── DEALER TABLE ── */}
+      {/* DEALER TABLE */}
       <div style={S.tableSection}>
         <div style={S.tableTopBar}>
           <div style={S.tableTitle}>
@@ -235,18 +226,12 @@ export default function AdminDashboard() {
             <span style={S.dealerCount}>{filtered.length} of {dealers.length}</span>
           </div>
           <div style={S.filters}>
-            <input
-              style={S.searchInput}
-              placeholder="Search name or email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <input style={S.searchInput} placeholder="Search name or email..."
+              value={search} onChange={(e) => setSearch(e.target.value)} />
             <select style={S.select} value={filterModule} onChange={(e) => setFilterModule(e.target.value)}>
               <option value="all">All Modules</option>
               {Object.keys(moduleCounts).map((k) => (
-                <option key={k} value={k}>
-                  {k.charAt(0).toUpperCase() + k.slice(1)}
-                </option>
+                <option key={k} value={k}>{k.charAt(0).toUpperCase() + k.slice(1)}</option>
               ))}
             </select>
             <select style={S.select} value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
@@ -275,6 +260,7 @@ export default function AdminDashboard() {
                 <th style={S.th}>Tier</th>
                 <th style={S.th}>Billing Status</th>
                 <th style={S.th}>Signed Up</th>
+                <th style={S.th}></th>
               </tr>
             </thead>
             <tbody>
@@ -285,23 +271,20 @@ export default function AdminDashboard() {
                 const tier      = (d.subscription_tier || 'basic').toLowerCase();
                 const tierStyle = TIER_COLORS[tier] || TIER_COLORS.basic;
                 const sc        = STATUS_COLORS[d.status?.toLowerCase()] || { bg: '#F3F4F6', text: '#374151' };
+                const isFounder = d.id === NSS_FOUNDER_ID;
+                const isDeleting = deleting === d.id;
 
                 return (
-                  <tr
-                    key={d.id}
-                    style={{ ...S.tr, background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}
-                  >
-                    {/* Business */}
+                  <tr key={d.id} style={{ ...S.tr, background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
                     <td style={S.td}>
-                      <span style={S.bizName}>{d.name || '-'}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={S.bizName}>{d.name || '-'}</span>
+                        {isFounder && (
+                          <span style={S.founderBadge}>FOUNDER</span>
+                        )}
+                      </div>
                     </td>
-
-                    {/* Email */}
-                    <td style={{ ...S.td, color: '#6B7280', fontSize: 13 }}>
-                      {d.email || '-'}
-                    </td>
-
-                    {/* Module */}
+                    <td style={{ ...S.td, color: '#6B7280', fontSize: 13 }}>{d.email || '-'}</td>
                     <td style={S.td}>
                       <span style={{
                         ...S.modulePill,
@@ -313,8 +296,6 @@ export default function AdminDashboard() {
                         {brandName}
                       </span>
                     </td>
-
-                    {/* Tier */}
                     <td style={S.td}>
                       <span style={{
                         ...S.pill,
@@ -325,24 +306,36 @@ export default function AdminDashboard() {
                         {tier}
                       </span>
                     </td>
-
-                    {/* Billing status */}
                     <td style={S.td}>
                       <span style={{ ...S.pill, background: sc.bg, color: sc.text }}>
                         {d.status || '-'}
                       </span>
                     </td>
-
-                    {/* Signed up */}
                     <td style={{ ...S.td, color: '#9CA3AF', fontSize: 12 }}>
                       {d.created_at ? new Date(d.created_at).toLocaleDateString() : '-'}
+                    </td>
+                    <td style={{ ...S.td, textAlign: 'right' }}>
+                      {!isFounder && (
+                        <button
+                          style={{
+                            ...S.deleteBtn,
+                            opacity: isDeleting ? 0.5 : 1,
+                            cursor: isDeleting ? 'not-allowed' : 'pointer',
+                          }}
+                          onClick={() => handleDelete(d)}
+                          disabled={isDeleting}
+                          title="Delete dealer"
+                        >
+                          {isDeleting ? '...' : '✕'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ ...S.td, textAlign: 'center', color: '#9CA3AF', padding: 40 }}>
+                  <td colSpan={7} style={{ ...S.td, textAlign: 'center', color: '#9CA3AF', padding: 40 }}>
                     No dealers match your filters.
                   </td>
                 </tr>
@@ -351,27 +344,15 @@ export default function AdminDashboard() {
           </table>
         </div>
       </div>
-
     </div>
   );
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────────────
-function StatCard({
-  label, value, sub, accent, dark = false,
-}: {
-  label: string;
-  value: string | number;
-  sub: string;
-  accent: string;
-  dark?: boolean;
+function StatCard({ label, value, sub, accent, dark = false }: {
+  label: string; value: string | number; sub: string; accent: string; dark?: boolean;
 }) {
   return (
-    <div style={{
-      ...S.card,
-      background: dark ? TEAL_DARK : '#fff',
-      borderTop: `3px solid ${accent}`,
-    }}>
+    <div style={{ ...S.card, background: dark ? TEAL_DARK : '#fff', borderTop: `3px solid ${accent}` }}>
       <p style={{ ...S.cardLabel, color: dark ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>{label}</p>
       <p style={{ ...S.cardValue, color: dark ? TEAL_ACCENT : accent }}>{value}</p>
       <p style={{ ...S.cardSub, color: dark ? 'rgba(255,255,255,0.35)' : '#9CA3AF' }}>{sub}</p>
@@ -379,7 +360,6 @@ function StatCard({
   );
 }
 
-// ── Loading / access denied ───────────────────────────────────────────────────
 function LoadingScreen({ message }: { message: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 12, background: '#F9FAFB' }}>
@@ -400,221 +380,64 @@ function AccessDenied() {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    background: '#F1F5F9',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    paddingBottom: 48,
-  },
-
-  // Nav
-  nav: {
-    background: TEAL_DARK,
-    padding: '0 32px',
-    height: 60,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottom: `1px solid rgba(94,234,212,0.15)`,
-  },
+  page: { minHeight: '100vh', background: '#F1F5F9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', paddingBottom: 48 },
+  nav: { background: TEAL_DARK, padding: '0 32px', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid rgba(94,234,212,0.15)` },
   navLeft: { display: 'flex', alignItems: 'center', gap: 12 },
   navLogo: { fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: -0.5 },
   navDivider: { color: 'rgba(255,255,255,0.2)', fontSize: 18 },
   navSub: { fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: 500 },
   navRight: { display: 'flex', alignItems: 'center', gap: 16 },
-  internalBadge: {
-    background: '#DC2626',
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: 1,
-    padding: '3px 8px',
-    borderRadius: 4,
-  },
-  liveCount: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: '50%',
-    background: TEAL_ACCENT,
-  },
-
-  // Stat cards
-  statRow: {
-    display: 'flex',
-    gap: 14,
-    padding: '24px 32px 0',
-    flexWrap: 'wrap',
-  },
-  card: {
-    borderRadius: 10,
-    padding: '18px 22px',
-    flex: '1 1 130px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-  },
-  cardLabel: {
-    margin: 0,
-    fontSize: 11,
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  cardValue: {
-    margin: '8px 0 4px',
-    fontSize: 28,
-    fontWeight: 700,
-    lineHeight: 1,
-  },
+  internalBadge: { background: '#DC2626', color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: '3px 8px', borderRadius: 4 },
+  liveCount: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.5)' },
+  liveDot: { width: 7, height: 7, borderRadius: '50%', background: TEAL_ACCENT },
+  statRow: { display: 'flex', gap: 14, padding: '24px 32px 0', flexWrap: 'wrap' },
+  card: { borderRadius: 10, padding: '18px 22px', flex: '1 1 130px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
+  cardLabel: { margin: 0, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8 },
+  cardValue: { margin: '8px 0 4px', fontSize: 28, fontWeight: 700, lineHeight: 1 },
   cardSub: { margin: 0, fontSize: 12 },
-
-  // Module breakdown
-  moduleSection: {
-    margin: '20px 32px 0',
-    background: '#fff',
-    borderRadius: 10,
-    padding: '16px 20px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-    border: `1px solid ${TEAL_BORDER}`,
-  },
-  moduleSectionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: TEAL_MID,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
+  moduleSection: { margin: '20px 32px 0', background: '#fff', borderRadius: 10, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: `1px solid ${TEAL_BORDER}` },
+  moduleSectionHeader: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 },
+  sectionLabel: { fontSize: 12, fontWeight: 700, color: TEAL_MID, textTransform: 'uppercase', letterSpacing: 1 },
   sectionSub: { fontSize: 12, color: '#9CA3AF' },
-  moduleGrid: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  moduleChip: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '6px 12px',
-    borderRadius: 100,
-    border: '1px solid #E5E7EB',
-    background: '#fff',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 500,
-    transition: 'all 0.15s',
-    outline: 'none',
-    fontFamily: 'inherit',
-  },
-  moduleChipDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
+  moduleGrid: { display: 'flex', flexWrap: 'wrap', gap: 8 },
+  moduleChip: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 100, border: '1px solid #E5E7EB', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 500, outline: 'none', fontFamily: 'inherit' },
+  moduleChipDot: { width: 8, height: 8, borderRadius: '50%', flexShrink: 0 },
   moduleChipName: { color: '#374151' },
   moduleChipCount: { fontWeight: 700 },
-
-  // Dealer table
-  tableSection: {
-    margin: '16px 32px 0',
-    background: '#fff',
-    borderRadius: 12,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-    overflow: 'hidden',
-  },
-  tableTopBar: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '18px 24px',
-    borderBottom: '1px solid #F3F4F6',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
+  tableSection: { margin: '16px 32px 0', background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' },
+  tableTopBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid #F3F4F6', flexWrap: 'wrap', gap: 12 },
   tableTitle: { display: 'flex', alignItems: 'center', gap: 10 },
   h2: { margin: 0, fontSize: 15, fontWeight: 700, color: '#111827' },
-  dealerCount: {
-    fontSize: 12,
-    background: TEAL_LIGHT,
-    color: TEAL_MID,
-    border: `1px solid ${TEAL_BORDER}`,
-    padding: '2px 10px',
-    borderRadius: 100,
-    fontWeight: 600,
-  },
+  dealerCount: { fontSize: 12, background: TEAL_LIGHT, color: TEAL_MID, border: `1px solid ${TEAL_BORDER}`, padding: '2px 10px', borderRadius: 100, fontWeight: 600 },
   filters: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  searchInput: {
-    border: '1px solid #E5E7EB',
-    borderRadius: 8,
-    padding: '8px 12px',
-    fontSize: 13,
-    outline: 'none',
-    minWidth: 200,
-    color: '#374151',
-    fontFamily: 'inherit',
-  },
-  select: {
-    border: '1px solid #E5E7EB',
-    borderRadius: 8,
-    padding: '8px 12px',
-    fontSize: 13,
-    outline: 'none',
-    color: '#374151',
-    background: '#fff',
-    fontFamily: 'inherit',
-    cursor: 'pointer',
-  },
+  searchInput: { border: '1px solid #E5E7EB', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', minWidth: 200, color: '#374151', fontFamily: 'inherit' },
+  select: { border: '1px solid #E5E7EB', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', color: '#374151', background: '#fff', fontFamily: 'inherit', cursor: 'pointer' },
   tableWrap: { overflowX: 'auto' },
   table: { width: '100%', borderCollapse: 'collapse' },
   thead: { background: '#F8FAFC' },
-  th: {
-    padding: '11px 16px',
-    textAlign: 'left',
-    fontSize: 11,
-    fontWeight: 700,
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    whiteSpace: 'nowrap',
-    borderBottom: '1px solid #F1F5F9',
-  },
+  th: { padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.8, whiteSpace: 'nowrap', borderBottom: '1px solid #F1F5F9' },
   tr: { borderBottom: '1px solid #F3F4F6' },
   td: { padding: '13px 16px', fontSize: 14, color: '#374151', verticalAlign: 'middle' },
   bizName: { fontWeight: 600, color: '#111827', fontSize: 14 },
-  pill: {
-    display: 'inline-block',
-    padding: '3px 10px',
-    borderRadius: 20,
+  founderBadge: { fontSize: 9, fontWeight: 700, letterSpacing: 0.8, background: TEAL_LIGHT, color: TEAL_MID, border: `1px solid ${TEAL_BORDER}`, padding: '2px 6px', borderRadius: 4 },
+  pill: { display: 'inline-block', padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, textTransform: 'capitalize' },
+  modulePill: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600 },
+  modulePillDot: { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
+  deleteBtn: {
+    background: 'transparent',
+    border: '1px solid #FCA5A5',
+    color: '#EF4444',
+    borderRadius: 6,
+    width: 28,
+    height: 28,
     fontSize: 12,
-    fontWeight: 600,
-    textTransform: 'capitalize',
-  },
-  modulePill: {
+    fontWeight: 700,
+    cursor: 'pointer',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
-    padding: '3px 10px',
-    borderRadius: 20,
-    fontSize: 12,
-    fontWeight: 600,
-  },
-  modulePillDot: {
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
-    flexShrink: 0,
+    justifyContent: 'center',
+    fontFamily: 'inherit',
+    transition: 'background 0.15s',
   },
 };
