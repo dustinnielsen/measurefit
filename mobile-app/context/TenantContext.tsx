@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export interface TenantConfig {
   dealer_id: string;
   dealer_name: string;
+  subscription_tier: 'basic' | 'pro' | 'enterprise';
   brand_key: string;
   brand_name: string;
   primary_color: string;
@@ -21,6 +22,7 @@ export interface TenantConfig {
 const DEFAULT_CONFIG: TenantConfig = {
   dealer_id: '',
   dealer_name: 'WindowFit',
+  subscription_tier: 'basic',
   brand_key: 'windowfit',
   brand_name: 'WindowFit',
   primary_color: '#2563EB',
@@ -68,7 +70,6 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
-        // Pull dealerId from AsyncStorage (mirrors portal's localStorage)
         const storedDealerId = await AsyncStorage.getItem('dealer_id');
         const dealerId = storedDealerId || NSS_DEALER_ID;
 
@@ -84,14 +85,13 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         const data: TenantConfig = await response.json();
 
         if (!cancelled) {
-          console.log('[TenantContext] Loaded:', data.brand_name, data.primary_color);
-setTenantConfig(data);
+          console.log('[TenantContext] Loaded:', data.brand_name, data.primary_color, data.subscription_tier);
+          setTenantConfig(data);
         }
       } catch (err: unknown) {
         if (!cancelled) {
           console.warn('[TenantContext] Using default config:', err);
           setError(err instanceof Error ? err.message : 'Unknown error');
-          // Falls back to DEFAULT_CONFIG — app still works
         }
       } finally {
         if (!cancelled) {
