@@ -455,7 +455,20 @@ app.get('/api/admin/dealers', requireAdminSecret, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('dealers')
-      .select('id, name, email, plan, status, stripe_customer_id, created_at')
+      .select(`
+        id,
+        name,
+        email,
+        plan,
+        status,
+        stripe_customer_id,
+        created_at,
+        subscription_tier,
+        vertical_brands (
+          brand_key,
+          brand_name
+        )
+      `)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -531,6 +544,7 @@ app.get('/api/tenant/config/:dealerId', async (req, res) => {
       .select(`
         id,
         name,
+        subscription_tier,
         vertical_brand_id,
         tenant_config,
         vertical_brands (
@@ -566,9 +580,10 @@ app.get('/api/tenant/config/:dealerId', async (req, res) => {
       measurement_unit_label: 'window opening'
     };
 
-    return res.json({
+   return res.json({
       dealer_id: data.id,
       dealer_name: data.name,
+      subscription_tier: data.subscription_tier || 'basic',
       brand_key: brand.brand_key,
       brand_name: brand.brand_name,
       primary_color: brand.primary_color,
