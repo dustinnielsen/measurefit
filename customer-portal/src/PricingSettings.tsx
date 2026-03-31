@@ -46,7 +46,7 @@ interface PricingSettingsProps {
 }
 
 export default function PricingSettings({ dealerId, brandColor = '#2563EB' }: PricingSettingsProps) {
-  const [defaults, setDefaults]   = useState<PricingDefault[]>([]);
+  const [_defaults, setDefaults]  = useState<PricingDefault[]>([]);
   const [overrides, setOverrides] = useState<PricingOverride[]>([]);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState<string | null>(null);
