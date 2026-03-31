@@ -17,6 +17,7 @@ const Alert = {
 };
 
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { quotesService, customersService, roomsService } from '../lib/supabase';
 import type { Quote, Customer } from '../lib/supabase';
 
@@ -26,6 +27,7 @@ const DEFAULT_INSTALL = 15;
 export default function QuoteBuilderScreen({ route, navigation }: any) {
   const { quoteId } = route.params ?? {};
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
 
   const [quote, setQuote] = useState<Quote | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -51,6 +53,8 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const [showWindowPicker, setShowWindowPicker] = useState(false);
   const [addedWindowIds, setAddedWindowIds] = useState<Set<string>>(new Set());
 
+  const brandColor = tenantConfig.primary_color;
+
   useEffect(() => { init(); }, [quoteId]);
 
   const customerFullName = (c: Customer) => `${c.first_name} ${c.last_name}`.trim();
@@ -68,7 +72,6 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         const q = await quotesService.getQuote(quoteId);
         setQuote(q);
         if (q.customer) setSelectedCustomer(q.customer as Customer);
-        // Track which windows are already in the quote
         const ids = new Set<string>((q.line_items ?? []).map((li: any) => li.window_id).filter(Boolean));
         setAddedWindowIds(ids);
       }
@@ -141,7 +144,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const handleAddWindow = async (window: any) => {
     if (!quote || !dealer) return;
     if (!window.product) {
-      Alert.alert('No product assigned', 'Assign a product to this window in the Rooms screen first.');
+      Alert.alert('No product assigned', `Assign a product to this ${tenantConfig.product_noun} in the Rooms screen first.`);
       return;
     }
     setSaving(true);
@@ -149,7 +152,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       await quotesService.addLineItem(quote.id, {
         window_id: window.id,
         product_id: window.product.id,
-        description: `${window.label ?? 'Window'} — ${window.product.name}`,
+        description: `${window.label ?? tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)} — ${window.product.name}`,
         width_in: window.width_in,
         height_in: window.height_in,
         unit_price_cents: window.product.custom_price_cents ?? window.product.base_price_cents,
@@ -159,7 +162,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       setQuote(updated);
       setAddedWindowIds(prev => new Set([...prev, window.id]));
     } catch (e: any) {
-      Alert.alert('Failed to add window', e.message);
+      Alert.alert(`Failed to add ${tenantConfig.product_noun}`, e.message);
     } finally {
       setSaving(false);
     }
@@ -196,7 +199,6 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
     }
   };
 
-  // All windows across all rooms that have a product assigned
   const allWindows = rooms.flatMap((r: any) =>
     (r.windows ?? []).map((w: any) => ({ ...w, roomName: r.name }))
   );
@@ -204,7 +206,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const windowsAvailable = windowsWithProducts.filter((w: any) => !addedWindowIds.has(w.id));
 
   if (loading) {
-    return <View style={styles.centered}><ActivityIndicator color="#0A84FF" size="large" /></View>;
+    return <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>;
   }
 
   return (
@@ -216,10 +218,10 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         <Text style={styles.headerTitle}>{quote ? quote.quote_number : 'New Quote'}</Text>
         {quote && (
           <View style={[styles.statusBadge, {
-            backgroundColor: quote.status === 'sent' ? 'rgba(10,132,255,0.15)' : 'rgba(255,255,255,0.08)',
-            borderColor: quote.status === 'sent' ? '#0A84FF' : 'rgba(255,255,255,0.15)',
+            backgroundColor: quote.status === 'sent' ? brandColor + '26' : 'rgba(255,255,255,0.08)',
+            borderColor: quote.status === 'sent' ? brandColor : 'rgba(255,255,255,0.15)',
           }]}>
-            <Text style={[styles.statusText, { color: quote.status === 'sent' ? '#0A84FF' : 'rgba(255,255,255,0.5)' }]}>
+            <Text style={[styles.statusText, { color: quote.status === 'sent' ? brandColor : 'rgba(255,255,255,0.5)' }]}>
               {quote.status.toUpperCase()}
             </Text>
           </View>
@@ -232,25 +234,31 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Customer</Text>
           {selectedCustomer && !isNewCustomer ? (
-            <View style={styles.selectedCustomer}>
+            <View style={[styles.selectedCustomer, { borderColor: brandColor + '4D' }]}>
               <View>
                 <Text style={styles.selectedCustomerName}>{customerFullName(selectedCustomer)}</Text>
                 <Text style={styles.selectedCustomerSub}>{selectedCustomer.email ?? selectedCustomer.phone ?? ''}</Text>
               </View>
               {!quote && (
                 <TouchableOpacity onPress={() => setSelectedCustomer(null)}>
-                  <Text style={styles.changeText}>Change</Text>
+                  <Text style={[styles.changeText, { color: brandColor }]}>Change</Text>
                 </TouchableOpacity>
               )}
             </View>
           ) : !quote ? (
             <View style={styles.section}>
               <View style={styles.tabRow}>
-                <TouchableOpacity style={[styles.tab, !isNewCustomer && styles.tabActive]} onPress={() => setIsNewCustomer(false)}>
-                  <Text style={[styles.tabText, !isNewCustomer && styles.tabTextActive]}>Existing</Text>
+                <TouchableOpacity
+                  style={[styles.tab, !isNewCustomer && { backgroundColor: brandColor + '26', borderWidth: 1, borderColor: brandColor }]}
+                  onPress={() => setIsNewCustomer(false)}
+                >
+                  <Text style={[styles.tabText, !isNewCustomer && { color: brandColor }]}>Existing</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.tab, isNewCustomer && styles.tabActive]} onPress={() => setIsNewCustomer(true)}>
-                  <Text style={[styles.tabText, isNewCustomer && styles.tabTextActive]}>New Customer</Text>
+                <TouchableOpacity
+                  style={[styles.tab, isNewCustomer && { backgroundColor: brandColor + '26', borderWidth: 1, borderColor: brandColor }]}
+                  onPress={() => setIsNewCustomer(true)}
+                >
+                  <Text style={[styles.tabText, isNewCustomer && { color: brandColor }]}>New Customer</Text>
                 </TouchableOpacity>
               </View>
               {!isNewCustomer ? (
@@ -294,19 +302,19 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         {quote && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionLabel}>Windows</Text>
+              <Text style={styles.sectionLabel}>{tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
               <TouchableOpacity
-                style={styles.addWindowBtn}
+                style={[styles.addWindowBtn, { backgroundColor: brandColor + '26', borderColor: brandColor + '4D' }]}
                 onPress={() => setShowWindowPicker(true)}
               >
-                <Text style={styles.addWindowBtnText}>+ Add Window</Text>
+                <Text style={[styles.addWindowBtnText, { color: brandColor }]}>+ Add {tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
               </TouchableOpacity>
             </View>
 
             {lineItems.length === 0 ? (
               <View style={styles.emptyWindows}>
-                <Text style={styles.emptyWindowsText}>No windows added yet.</Text>
-                <Text style={styles.emptyWindowsHint}>Tap "+ Add Window" to add scanned windows with assigned products.</Text>
+                <Text style={styles.emptyWindowsText}>No {tenantConfig.product_noun_plural} added yet.</Text>
+                <Text style={styles.emptyWindowsHint}>Tap "+ Add {tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}" to add scanned {tenantConfig.product_noun_plural} with assigned products.</Text>
               </View>
             ) : (
               lineItems.map((item: any) => {
@@ -316,7 +324,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
                 return (
                   <View key={itemId} style={styles.lineItem}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.lineItemName}>{item.product_name ?? item.description ?? 'Window'}</Text>
+                      <Text style={styles.lineItemName}>{item.product_name ?? item.description ?? tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
                       {item.width_in && item.height_in && (
                         <Text style={styles.lineItemSub}>{item.width_in}" × {item.height_in}"</Text>
                       )}
@@ -326,7 +334,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
                           onPress={() => setItemMargins(p => ({ ...p, [itemId]: Math.max(0, margin - 5) }))}>
                           <Text style={styles.marginBtnText}>−</Text>
                         </TouchableOpacity>
-                        <Text style={styles.itemMarginVal}>{margin}%</Text>
+                        <Text style={[styles.itemMarginVal, { color: brandColor }]}>{margin}%</Text>
                         <TouchableOpacity style={styles.itemMarginBtn}
                           onPress={() => setItemMargins(p => ({ ...p, [itemId]: Math.min(200, margin + 5) }))}>
                           <Text style={styles.marginBtnText}>+</Text>
@@ -404,7 +412,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
             <View style={styles.divider} />
             <View style={styles.totalRow}>
               <Text style={styles.grandTotalLabel}>Total</Text>
-              <Text style={styles.grandTotalVal}>${(computedTotal / 100).toFixed(0)}</Text>
+              <Text style={[styles.grandTotalVal, { color: brandColor }]}>${(computedTotal / 100).toFixed(0)}</Text>
             </View>
           </View>
         )}
@@ -421,7 +429,8 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
         {/* Actions */}
         {!quote ? (
-          <TouchableOpacity style={[styles.primaryBtn, saving && styles.btnDisabled]}
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: brandColor }, saving && styles.btnDisabled]}
             onPress={handleCreateQuote} disabled={saving}>
             {saving ? <ActivityIndicator color="white" size="small" />
               : <Text style={styles.primaryBtnText}>Create Quote</Text>}
@@ -429,7 +438,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         ) : quote.status === 'draft' ? (
           <View style={styles.btnRow}>
             <TouchableOpacity
-              style={[styles.primaryBtn, { flex: 1 }, sending && styles.btnDisabled]}
+              style={[styles.primaryBtn, { flex: 1, backgroundColor: brandColor }, sending && styles.btnDisabled]}
               onPress={handleSend} disabled={sending}>
               {sending ? <ActivityIndicator color="white" size="small" />
                 : <Text style={styles.primaryBtnText}>Send to Customer →</Text>}
@@ -449,19 +458,19 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       <Modal visible={showWindowPicker} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Windows</Text>
+            <Text style={styles.modalTitle}>Add {tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
             <TouchableOpacity onPress={() => setShowWindowPicker(false)}>
-              <Text style={styles.modalClose}>Done</Text>
+              <Text style={[styles.modalClose, { color: brandColor }]}>Done</Text>
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalContent}>
             {windowsAvailable.length === 0 ? (
               <View style={styles.emptyWindows}>
-                <Text style={styles.emptyWindowsText}>No windows available to add.</Text>
+                <Text style={styles.emptyWindowsText}>No {tenantConfig.product_noun_plural} available to add.</Text>
                 <Text style={styles.emptyWindowsHint}>
                   {windowsWithProducts.length === 0
-                    ? 'Go to Rooms, scan windows, and assign products before building a quote.'
-                    : 'All windows with products have been added to this quote.'}
+                    ? `Go to Rooms, scan ${tenantConfig.product_noun_plural}, and assign products before building a quote.`
+                    : `All ${tenantConfig.product_noun_plural} with products have been added to this quote.`}
                 </Text>
               </View>
             ) : (
@@ -475,7 +484,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
                       <TouchableOpacity key={w.id} style={styles.windowPickerItem}
                         onPress={() => { handleAddWindow(w); setShowWindowPicker(false); }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.windowPickerName}>{w.label ?? 'Window'}</Text>
+                          <Text style={styles.windowPickerName}>{w.label ?? tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
                           <Text style={styles.windowPickerSub}>
                             {w.width_in && w.height_in ? `${w.width_in}" × ${w.height_in}"  ·  ` : ''}
                             {w.product?.name ?? ''}
@@ -484,7 +493,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
                         <Text style={styles.windowPickerPrice}>
                           ${((w.product?.custom_price_cents ?? w.product?.base_price_cents ?? 0) / 100).toFixed(0)}
                         </Text>
-                        <Text style={styles.addChevron}>+</Text>
+                        <Text style={[styles.addChevron, { color: brandColor }]}>+</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -511,17 +520,15 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   sectionLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  addWindowBtn: { backgroundColor: 'rgba(10,132,255,0.15)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(10,132,255,0.3)' },
-  addWindowBtnText: { color: '#0A84FF', fontWeight: '700', fontSize: 13 },
-  selectedCustomer: { backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(10,132,255,0.3)', padding: 14, flexDirection: 'row', justifyContent: 'space-between' },
+  addWindowBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1 },
+  addWindowBtnText: { fontWeight: '700', fontSize: 13 },
+  selectedCustomer: { backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, padding: 14, flexDirection: 'row', justifyContent: 'space-between' },
   selectedCustomerName: { color: 'white', fontWeight: '700', fontSize: 15 },
   selectedCustomerSub: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
-  changeText: { color: '#0A84FF', fontWeight: '600', fontSize: 13 },
+  changeText: { fontWeight: '600', fontSize: 13 },
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   tab: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center' },
-  tabActive: { backgroundColor: 'rgba(10,132,255,0.15)', borderWidth: 1, borderColor: '#0A84FF' },
   tabText: { color: 'rgba(255,255,255,0.4)', fontWeight: '600', fontSize: 13 },
-  tabTextActive: { color: '#0A84FF' },
   formFields: { gap: 10 },
   fieldLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginBottom: 4 },
   textInput: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 10, color: 'white', fontSize: 15, padding: 12 },
@@ -540,7 +547,7 @@ const styles = StyleSheet.create({
   itemMarginRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   itemMarginLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
   itemMarginBtn: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  itemMarginVal: { color: '#0A84FF', fontWeight: '700', fontSize: 12, minWidth: 32, textAlign: 'center' },
+  itemMarginVal: { fontWeight: '700', fontSize: 12, minWidth: 32, textAlign: 'center' },
   removeText: { color: 'rgba(255,69,58,0.7)', fontSize: 10, fontWeight: '600', marginLeft: 4 },
   marginBtnText: { color: 'white', fontSize: 16, fontWeight: '600', lineHeight: 20 },
   marginCard: { backgroundColor: '#0D1520', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 12 },
@@ -556,9 +563,9 @@ const styles = StyleSheet.create({
   totalVal: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 4 },
   grandTotalLabel: { color: 'white', fontWeight: '700', fontSize: 16 },
-  grandTotalVal: { color: '#0A84FF', fontWeight: '800', fontSize: 22 },
+  grandTotalVal: { fontWeight: '800', fontSize: 22 },
   btnRow: { flexDirection: 'row', gap: 10 },
-  primaryBtn: { backgroundColor: '#0A84FF', borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+  primaryBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   primaryBtnText: { color: 'white', fontWeight: '700', fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
   sentStatusCard: { backgroundColor: 'rgba(48,209,88,0.08)', borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)', borderRadius: 14, padding: 16, alignItems: 'center' },
@@ -566,7 +573,7 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#080C14' },
   modalHeader: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   modalTitle: { color: 'white', fontSize: 20, fontWeight: '800' },
-  modalClose: { color: '#0A84FF', fontSize: 16, fontWeight: '600' },
+  modalClose: { fontSize: 16, fontWeight: '600' },
   modalContent: { padding: 20, gap: 16, paddingBottom: 40 },
   roomSection: { gap: 8 },
   roomSectionTitle: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
@@ -574,5 +581,5 @@ const styles = StyleSheet.create({
   windowPickerName: { color: 'white', fontWeight: '600', fontSize: 15 },
   windowPickerSub: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
   windowPickerPrice: { color: '#30D158', fontWeight: '700', fontSize: 15 },
-  addChevron: { color: '#0A84FF', fontSize: 22, fontWeight: '700', marginLeft: 4 },
+  addChevron: { fontSize: 22, fontWeight: '700', marginLeft: 4 },
 });

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { productsService } from '../lib/supabase';
 
 const CATEGORIES = ['All', 'Roller', 'Shutter', 'Cellular', 'Roman', 'Natural', 'Other'];
@@ -28,12 +29,15 @@ function categoryEmoji(cat: string) {
 
 export default function CatalogScreen({ navigation }: any) {
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeBrand, setActiveBrand] = useState('All Brands');
   const [motorizedOnly, setMotorizedOnly] = useState(false);
   const [search, setSearch] = useState('');
+
+  const brandColor = tenantConfig.primary_color;
 
   useFocusEffect(useCallback(() => {
     if (dealer) loadCatalog();
@@ -66,7 +70,7 @@ export default function CatalogScreen({ navigation }: any) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color="#0A84FF" size="large" />
+        <ActivityIndicator color={brandColor} size="large" />
       </View>
     );
   }
@@ -116,7 +120,7 @@ export default function CatalogScreen({ navigation }: any) {
               {CATEGORIES.map(cat => (
                 <TouchableOpacity
                   key={cat}
-                  style={[styles.catChip, activeCategory === cat && styles.catChipActive]}
+                  style={[styles.catChip, activeCategory === cat && { backgroundColor: brandColor }]}
                   onPress={() => setActiveCategory(cat)}
                 >
                   <Text style={[styles.catChipText, activeCategory === cat && styles.catChipTextActive]}>{cat}</Text>
@@ -154,9 +158,9 @@ export default function CatalogScreen({ navigation }: any) {
                 <Text style={styles.productName} numberOfLines={2}>{p.name}</Text>
                 <Text style={styles.productMaterial}>{p.material}</Text>
                 <View style={styles.productFooter}>
-                  <Text style={styles.productPrice}>${priceFor(p)}</Text>
+                  <Text style={[styles.productPrice, { color: brandColor }]}>${priceFor(p)}</Text>
                   {p.dealer_price_cents && (
-                    <Text style={styles.customPriceTag}>custom</Text>
+                    <Text style={[styles.customPriceTag, { color: brandColor, backgroundColor: brandColor + '26' }]}>custom</Text>
                   )}
                 </View>
               </View>
@@ -203,9 +207,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  catChipActive: { backgroundColor: '#0A84FF' },
   catChipText: { color: 'rgba(255,255,255,0.5)', fontWeight: '600', fontSize: 13 },
-  catChipTextActive: { color: 'white' },
+  catChipTextActive: { color: 'white', fontWeight: '700' },
   grid: { paddingHorizontal: 20, paddingBottom: 40 },
   row: { gap: 12, marginBottom: 12 },
   productCard: {
@@ -234,9 +237,8 @@ const styles = StyleSheet.create({
   productName: { color: 'white', fontWeight: '700', fontSize: 13, marginBottom: 2 },
   productMaterial: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginBottom: 8 },
   productFooter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  productPrice: { color: '#0A84FF', fontWeight: '800', fontSize: 15 },
+  productPrice: { fontWeight: '800', fontSize: 15 },
   customPriceTag: {
-    backgroundColor: 'rgba(10,132,255,0.15)', color: '#0A84FF',
     fontSize: 9, fontWeight: '700', paddingHorizontal: 5,
     paddingVertical: 2, borderRadius: 4,
   },

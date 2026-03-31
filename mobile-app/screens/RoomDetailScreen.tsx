@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { roomsService, productsService, supabase } from '../lib/supabase';
 import type { Window as WFWindow } from '../lib/supabase';
 
@@ -90,34 +91,22 @@ function colorNameToHex(name: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OUTDOOR SCENE — rendered into a fixed-size View
+// OUTDOOR SCENE
 // ─────────────────────────────────────────────────────────────────────────────
 function OutdoorScene({ paneW, paneH }: { paneW: number; paneH: number }) {
   return (
     <>
-      {/* Sky */}
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#87CEEB' }} />
-      {/* Horizon */}
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: paneH * 0.45, backgroundColor: '#B8DFF5' }} />
-      {/* Sun */}
       <View style={{ position: 'absolute', top: paneH * 0.08, right: paneW * 0.2, width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFE566' }} />
-      {/* Far hill left */}
       <View style={{ position: 'absolute', bottom: paneH * 0.22, left: -10, width: paneW * 0.6, height: paneH * 0.28, backgroundColor: '#8BB88A', borderTopLeftRadius: 80, borderTopRightRadius: 120 }} />
-      {/* Far hill right */}
       <View style={{ position: 'absolute', bottom: paneH * 0.2, right: -10, width: paneW * 0.55, height: paneH * 0.24, backgroundColor: '#7AAD79', borderTopLeftRadius: 100, borderTopRightRadius: 60 }} />
-      {/* Ground */}
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: paneH * 0.22, backgroundColor: '#6B9E5E' }} />
-      {/* Tree 1 trunk */}
       <View style={{ position: 'absolute', bottom: paneH * 0.22, left: paneW * 0.15, width: 10, height: paneH * 0.25, backgroundColor: '#7B5C3A' }} />
-      {/* Tree 1 canopy */}
       <View style={{ position: 'absolute', bottom: paneH * 0.38, left: paneW * 0.04, width: 56, height: 56, borderRadius: 28, backgroundColor: '#4A8C45' }} />
-      {/* Tree 2 trunk */}
       <View style={{ position: 'absolute', bottom: paneH * 0.22, right: paneW * 0.22, width: 7, height: paneH * 0.18, backgroundColor: '#7B5C3A' }} />
-      {/* Tree 2 canopy */}
       <View style={{ position: 'absolute', bottom: paneH * 0.33, right: paneW * 0.13, width: 40, height: 40, borderRadius: 20, backgroundColor: '#5A9E55' }} />
-      {/* House body */}
       <View style={{ position: 'absolute', bottom: paneH * 0.22, right: paneW * 0.05, width: 60, height: 40, backgroundColor: '#C0856A' }} />
-      {/* House roof */}
       <View style={{ position: 'absolute', bottom: paneH * 0.355, right: paneW * 0.02, width: 0, height: 0, borderLeftWidth: 33, borderRightWidth: 33, borderBottomWidth: 22, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#A0654A' }} />
     </>
   );
@@ -130,9 +119,10 @@ interface ConfiguratorProps {
   colorName: string | null;
   category: string;
   productName: string;
+  brandColor: string;
 }
 
-function WindowConfigurator({ colorName, category, productName }: ConfiguratorProps) {
+function WindowConfigurator({ colorName, category, productName, brandColor }: ConfiguratorProps) {
   const hex = colorName ? colorNameToHex(colorName) : '#E8DCC8';
   const isShutter = category === 'Shutter';
   const isCellular = category === 'Cellular';
@@ -203,7 +193,6 @@ function WindowConfigurator({ colorName, category, productName }: ConfiguratorPr
         }} />
       ));
     }
-    // Roller
     const lineCount = 20;
     const lineH = pH / lineCount;
     return (
@@ -220,7 +209,6 @@ function WindowConfigurator({ colorName, category, productName }: ConfiguratorPr
     );
   };
 
-  // Label for bottom of configurator
   const modeLabel = isLightFiltering
     ? '☀️ Light filtering'
     : isBlackout
@@ -240,66 +228,36 @@ function WindowConfigurator({ colorName, category, productName }: ConfiguratorPr
         <Text style={configuratorStyles.colorLabel}>
           {colorName ?? 'Select a color to preview'}
         </Text>
-        <Text style={configuratorStyles.categoryTag}>{category}</Text>
+        <Text style={[configuratorStyles.categoryTag, {
+          color: brandColor,
+          backgroundColor: brandColor + '1F',
+        }]}>{category}</Text>
       </View>
 
       <View style={[configuratorStyles.frame, { width: W, height: H }]}>
-        {/* Window frame */}
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#2C2C2C', borderRadius: 4 }} />
-
-        {/* Glass pane */}
         <View style={{ position: 'absolute', top: FRAME, left: FRAME, right: FRAME, bottom: FRAME, overflow: 'hidden' }}>
-
-          {/* ── BLACKOUT: just solid color ── */}
           {isBlackout && (
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: hex }} />
           )}
-
-          {/* ── STANDARD / LIGHT FILTERING: outdoor scene + overlay ── */}
           {!isBlackout && (
             <>
-              {/* Outdoor scene wrapped in its own container */}
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
                 <OutdoorScene paneW={paneW} paneH={paneH} />
               </View>
-
-              {/* For light filtering: dark scrim over the ENTIRE scene before blind renders */}
               {isLightFiltering && (
-                <View style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: '#000000',
-                  opacity: 0.72,
-                }} />
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000', opacity: 0.72 }} />
               )}
-
-              {/* Blind texture overlay */}
-              <View style={{
-                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                overflow: 'hidden',
-                opacity: isLightFiltering ? 0.55 : 0.78,
-              }}>
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden', opacity: isLightFiltering ? 0.55 : 0.78 }}>
                 {renderBlindOverlay(paneW, paneH)}
               </View>
-
-              {/* Warm tint for sheer */}
               {isLightFiltering && (
-                <View style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: 'rgba(255,240,200,0.08)',
-                }} />
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,240,200,0.08)' }} />
               )}
-
-              {/* Glass sheen */}
-              <View style={{
-                position: 'absolute', top: 0, left: 0,
-                width: paneW * 0.25, height: paneH,
-                backgroundColor: 'rgba(255,255,255,0.04)',
-              }} />
+              <View style={{ position: 'absolute', top: 0, left: 0, width: paneW * 0.25, height: paneH, backgroundColor: 'rgba(255,255,255,0.04)' }} />
             </>
           )}
         </View>
-
-        {/* Frame highlight */}
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 4, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)' }} />
       </View>
 
@@ -316,29 +274,12 @@ const configuratorStyles = StyleSheet.create({
     alignItems: 'center', backgroundColor: '#0A0F1E',
     borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 10,
   },
-  labelRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
-  },
-  colorDot: {
-    width: 14, height: 14, borderRadius: 7,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
-  },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' },
+  colorDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   colorLabel: { color: '#fff', fontSize: 14, fontWeight: '700', flex: 1 },
-  categoryTag: {
-    color: '#1E6FFF', fontSize: 11, fontWeight: '700',
-    letterSpacing: 0.5, textTransform: 'uppercase',
-    backgroundColor: 'rgba(30,111,255,0.12)',
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
-  },
-  frame: {
-    borderRadius: 4, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
-  },
-  productLabel: {
-    color: 'rgba(255,255,255,0.35)', fontSize: 11,
-    alignSelf: 'flex-start', fontStyle: 'italic',
-  },
+  categoryTag: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  frame: { borderRadius: 4, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+  productLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 11, alignSelf: 'flex-start', fontStyle: 'italic' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,6 +321,7 @@ function parseColors(raw: any): { name: string }[] {
 export default function RoomDetailScreen({ route, navigation }: any) {
   const { roomId, roomName } = route.params;
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
 
   const [windows, setWindows] = useState<WFWindow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -405,6 +347,11 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const lastProductRef = useRef<{ id: string; name: string } | null>(null);
   const windowsRef = useRef<WFWindow[]>([]);
   windowsRef.current = windows;
+
+  const brandColor = tenantConfig.primary_color;
+  const productNoun = tenantConfig.product_noun;
+  const productNounPlural = tenantConfig.product_noun_plural;
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const loadWindows = async () => {
     if (!dealer) return;
@@ -466,7 +413,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
         await supabase.from('windows').update({ product_id: pendingProduct.id }).eq('id', id);
       }
       await loadWindows();
-      showToast(`✓ ${pendingProduct.name} applied to ${targetIds.length} window${targetIds.length > 1 ? 's' : ''}`);
+      showToast(`✓ ${pendingProduct.name} applied to ${targetIds.length} ${targetIds.length > 1 ? productNounPlural : productNoun}`);
     } catch (e) {
       console.error('applyProduct', e);
     } finally {
@@ -523,12 +470,12 @@ export default function RoomDetailScreen({ route, navigation }: any) {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Back</Text>
+            <Text style={[styles.backBtnText, { color: brandColor }]}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{roomName}</Text>
           <View style={{ width: 60 }} />
         </View>
-        <View style={styles.centered}><ActivityIndicator color="#0A84FF" size="large" /></View>
+        <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>
       </View>
     );
   }
@@ -537,14 +484,14 @@ export default function RoomDetailScreen({ route, navigation }: any) {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Back</Text>
+          <Text style={[styles.backBtnText, { color: brandColor }]}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{roomName}</Text>
         <View style={{ width: 60 }} />
       </View>
 
       {assigning && (
-        <View style={styles.assigningBanner}>
+        <View style={[styles.assigningBanner, { backgroundColor: brandColor }]}>
           <ActivityIndicator color="white" size="small" />
           <Text style={styles.assigningText}>Applying product...</Text>
         </View>
@@ -556,13 +503,13 @@ export default function RoomDetailScreen({ route, navigation }: any) {
 
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0A84FF" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brandColor} />}
       >
         {windows.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🪟</Text>
-            <Text style={styles.emptyTitle}>No Windows Yet</Text>
-            <Text style={styles.emptyDesc}>Scan a window and save it to this room to get started.</Text>
+            <Text style={styles.emptyTitle}>No {cap(productNounPlural)} Yet</Text>
+            <Text style={styles.emptyDesc}>Scan a {productNoun} and save it to this room to get started.</Text>
           </View>
         ) : (
           <>
@@ -590,21 +537,21 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                   </View>
 
                   {prod ? (
-                    <View style={styles.productAssigned}>
+                    <View style={[styles.productAssigned, { backgroundColor: brandColor + '14', borderColor: brandColor + '33' }]}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.productAssignedName}>{prod.name}</Text>
                         <View style={styles.brandRow}>
                           <View style={[styles.brandBadge, detectBrand(prod.name) === 'Hunter Douglas' && styles.brandBadgeHD]}>
                             <Text style={styles.brandBadgeText}>{detectBrand(prod.name) === 'Hunter Douglas' ? 'HD' : 'NWF'}</Text>
                           </View>
-                          <Text style={styles.productAssignedPrice}>
+                          <Text style={[styles.productAssignedPrice, { color: brandColor }]}>
                             {prod.base_price_cents ? `$${(prod.base_price_cents / 100).toFixed(0)}` : ''}
                           </Text>
                         </View>
                       </View>
                       <View style={{ gap: 6 }}>
-                        <TouchableOpacity style={styles.changeBtn} onPress={() => openPicker(w.id)}>
-                          <Text style={styles.changeBtnText}>Change</Text>
+                        <TouchableOpacity style={[styles.changeBtn, { backgroundColor: brandColor + '26' }]} onPress={() => openPicker(w.id)}>
+                          <Text style={[styles.changeBtnText, { color: brandColor }]}>Change</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.removeBtn} onPress={() => removeProduct(w.id)}>
                           <Text style={styles.removeBtnText}>Remove</Text>
@@ -613,7 +560,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                     </View>
                   ) : (
                     <View style={styles.productUnassigned}>
-                      <TouchableOpacity style={styles.assignBtn} onPress={() => openPicker(w.id)}>
+                      <TouchableOpacity style={[styles.assignBtn, { backgroundColor: brandColor }]} onPress={() => openPicker(w.id)}>
                         <Text style={styles.assignBtnText}>+ Assign Product</Text>
                       </TouchableOpacity>
                       {lastProductRef.current && (
@@ -639,7 +586,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                 }}
               >
                 <Text style={styles.applyAllBtnText}>
-                  Apply last product to {unassignedCount} unassigned windows →
+                  Apply last product to {unassignedCount} unassigned {productNounPlural} →
                 </Text>
               </TouchableOpacity>
             )}
@@ -661,14 +608,14 @@ export default function RoomDetailScreen({ route, navigation }: any) {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search products, colors, fabrics..."
+              placeholder={`Search products, colors, fabrics...`}
               placeholderTextColor="rgba(255,255,255,0.25)"
               style={styles.searchInput}
             />
           </View>
 
           {productsLoading ? (
-            <View style={styles.centered}><ActivityIndicator color="#0A84FF" size="large" /></View>
+            <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>
           ) : (
             <FlatList
               data={filteredProducts}
@@ -694,10 +641,10 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                     {CATEGORIES.map(cat => (
                       <TouchableOpacity
                         key={cat}
-                        style={[styles.catChip, activeCategory === cat && styles.catChipActive]}
+                        style={[styles.catChip, activeCategory === cat && { backgroundColor: brandColor + '33', borderColor: brandColor }]}
                         onPress={() => setActiveCategory(cat)}
                       >
-                        <Text style={[styles.catChipText, activeCategory === cat && styles.catChipTextActive]}>
+                        <Text style={[styles.catChipText, activeCategory === cat && { color: brandColor, fontWeight: '700' }]}>
                           {cat}
                         </Text>
                       </TouchableOpacity>
@@ -748,7 +695,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                         </View>
                       )}
                     </View>
-                    {price ? <Text style={styles.productRowPrice}>${price}</Text> : null}
+                    {price ? <Text style={[styles.productRowPrice, { color: brandColor }]}>${price}</Text> : null}
                   </TouchableOpacity>
                 );
               }}
@@ -780,6 +727,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
               colorName={selectedColor}
               category={colorPickerProduct.category ?? 'Roller'}
               productName={colorPickerProduct.name}
+              brandColor={brandColor}
             />
           )}
 
@@ -805,7 +753,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
           <View style={{ padding: 16, paddingBottom: 40, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', gap: 10 }}>
             {selectedColor && (
               <TouchableOpacity
-                style={styles.confirmBtn}
+                style={[styles.confirmBtn, { backgroundColor: brandColor }]}
                 onPress={() => handleProductSelect(colorPickerProduct, selectedColor)}
               >
                 <Text style={styles.confirmBtnText}>Use {selectedColor} →</Text>
@@ -838,17 +786,17 @@ export default function RoomDetailScreen({ route, navigation }: any) {
               </Text>
             )}
             <TouchableOpacity style={styles.scopeOption} onPress={() => applyProduct('single')}>
-              <Text style={styles.scopeOptionTitle}>This window only</Text>
-              <Text style={styles.scopeOptionDesc}>Apply to the selected window</Text>
+              <Text style={styles.scopeOptionTitle}>This {productNoun} only</Text>
+              <Text style={styles.scopeOptionDesc}>Apply to the selected {productNoun}</Text>
             </TouchableOpacity>
             {unassignedCount > 1 && (
               <TouchableOpacity style={styles.scopeOption} onPress={() => applyProduct('unassigned')}>
-                <Text style={styles.scopeOptionTitle}>All unassigned windows</Text>
-                <Text style={styles.scopeOptionDesc}>{unassignedCount} windows without a product</Text>
+                <Text style={styles.scopeOptionTitle}>All unassigned {productNounPlural}</Text>
+                <Text style={styles.scopeOptionDesc}>{unassignedCount} {productNounPlural} without a product</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={[styles.scopeOption, styles.scopeOptionAll]} onPress={() => applyProduct('all')}>
-              <Text style={styles.scopeOptionTitle}>All {windows.length} windows in room</Text>
+              <Text style={styles.scopeOptionTitle}>All {windows.length} {productNounPlural} in room</Text>
               <Text style={styles.scopeOptionDesc}>Replaces existing assignments</Text>
             </TouchableOpacity>
           </View>
@@ -869,155 +817,76 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: 'white', fontSize: 18, fontWeight: '800' },
   backBtn: { paddingVertical: 6, paddingRight: 12 },
-  backBtnText: { color: '#0A84FF', fontSize: 16 },
+  backBtnText: { fontSize: 16 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 60, gap: 12 },
-  assigningBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#0A84FF', padding: 12, paddingHorizontal: 20,
-  },
+  assigningBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingHorizontal: 20 },
   assigningText: { color: 'white', fontWeight: '600', fontSize: 14 },
-  toast: {
-    backgroundColor: '#30D158', marginHorizontal: 16, borderRadius: 12,
-    padding: 12, alignItems: 'center',
-  },
+  toast: { backgroundColor: '#30D158', marginHorizontal: 16, borderRadius: 12, padding: 12, alignItems: 'center' },
   toastText: { color: 'white', fontWeight: '700', fontSize: 13 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyEmoji: { fontSize: 56 },
   emptyTitle: { color: 'white', fontSize: 20, fontWeight: '800' },
   emptyDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center', lineHeight: 22, maxWidth: 280 },
-  lastProductBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(48,209,88,0.08)', borderRadius: 10, padding: 10,
-    borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)',
-  },
+  lastProductBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(48,209,88,0.08)', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)' },
   lastProductLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
   lastProductName: { color: '#30D158', fontSize: 12, fontWeight: '700', flex: 1 },
-  windowCard: {
-    backgroundColor: '#0D1520', borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 12,
-  },
+  windowCard: { backgroundColor: '#0D1520', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 12 },
   windowCardHeader: { flexDirection: 'row', alignItems: 'flex-start' },
   windowLabel: { color: 'white', fontSize: 16, fontWeight: '700' },
   windowMeta: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
   deleteBtn: { padding: 4 },
   deleteBtnText: { color: 'rgba(255,255,255,0.25)', fontSize: 16 },
-  productAssigned: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    backgroundColor: 'rgba(10,132,255,0.08)', borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: 'rgba(10,132,255,0.2)', gap: 10,
-  },
+  productAssigned: { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 12, padding: 12, borderWidth: 1, gap: 10 },
   productAssignedName: { color: 'white', fontSize: 13, fontWeight: '600', flex: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  productAssignedPrice: { color: '#0A84FF', fontSize: 13, fontWeight: '700' },
-  changeBtn: {
-    backgroundColor: 'rgba(10,132,255,0.15)', borderRadius: 8,
-    paddingVertical: 6, paddingHorizontal: 12,
-  },
-  changeBtnText: { color: '#0A84FF', fontSize: 12, fontWeight: '700' },
-  removeBtn: {
-    backgroundColor: 'rgba(255,69,58,0.1)', borderRadius: 8,
-    paddingVertical: 6, paddingHorizontal: 12,
-  },
+  productAssignedPrice: { fontSize: 13, fontWeight: '700' },
+  changeBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
+  changeBtnText: { fontSize: 12, fontWeight: '700' },
+  removeBtn: { backgroundColor: 'rgba(255,69,58,0.1)', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
   removeBtnText: { color: 'rgba(255,69,58,0.8)', fontSize: 12, fontWeight: '600' },
   productUnassigned: { flexDirection: 'row', gap: 10 },
-  assignBtn: {
-    flex: 1, backgroundColor: '#0A84FF', borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center',
-  },
+  assignBtn: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   assignBtnText: { color: 'white', fontWeight: '700', fontSize: 14 },
-  quickApplyBtn: {
-    flex: 1, backgroundColor: 'rgba(48,209,88,0.1)', borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center', paddingHorizontal: 8,
-    borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)',
-  },
+  quickApplyBtn: { flex: 1, backgroundColor: 'rgba(48,209,88,0.1)', borderRadius: 12, paddingVertical: 12, alignItems: 'center', paddingHorizontal: 8, borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)' },
   quickApplyText: { color: '#30D158', fontWeight: '600', fontSize: 12 },
-  applyAllBtn: {
-    backgroundColor: 'rgba(48,209,88,0.08)', borderRadius: 12, padding: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)',
-  },
+  applyAllBtn: { backgroundColor: 'rgba(48,209,88,0.08)', borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)' },
   applyAllBtnText: { color: '#30D158', fontSize: 12, fontWeight: '700' },
   modal: { flex: 1, backgroundColor: '#080C14' },
-  modalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 20, paddingTop: 24, borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   modalTitle: { color: 'white', fontSize: 18, fontWeight: '800' },
-  modalCloseBtn: {
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20,
-    width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
-  },
+  modalCloseBtn: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   modalCloseText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
   modalSearch: { padding: 16, paddingBottom: 8 },
-  searchInput: {
-    backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12,
-    color: 'white', fontSize: 15, padding: 12,
-  },
+  searchInput: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 15, padding: 12 },
   filterRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
-  brandChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-  },
+  brandChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   brandChipActive: { backgroundColor: 'rgba(255,214,10,0.15)', borderColor: '#FFD60A' },
   brandChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
   brandChipTextActive: { color: '#FFD60A', fontWeight: '700' },
   categories: { paddingHorizontal: 16, gap: 8, paddingBottom: 12 },
-  catChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-  },
-  catChipActive: { backgroundColor: 'rgba(10,132,255,0.2)', borderColor: '#0A84FF' },
+  catChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   catChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
-  catChipTextActive: { color: '#0A84FF', fontWeight: '700' },
   productList: { paddingHorizontal: 16, paddingTop: 4 },
   emptyText: { color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 40, fontSize: 14 },
-  productRow: {
-    flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 12,
-  },
+  productRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 12 },
   productRowEmoji: { fontSize: 28, marginTop: 2 },
   productRowName: { color: 'white', fontSize: 14, fontWeight: '700', flexShrink: 1 },
   productRowDesc: { color: 'rgba(255,255,255,0.35)', fontSize: 11, lineHeight: 16, marginTop: 3 },
-  productRowPrice: { color: '#0A84FF', fontWeight: '700', fontSize: 14, minWidth: 44, textAlign: 'right' },
-  brandBadge: {
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-    backgroundColor: 'rgba(48,209,88,0.15)',
-  },
+  productRowPrice: { fontWeight: '700', fontSize: 14, minWidth: 44, textAlign: 'right' },
+  brandBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: 'rgba(48,209,88,0.15)' },
   brandBadgeHD: { backgroundColor: 'rgba(10,132,255,0.15)' },
   brandBadgeText: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700' },
-  colorSwatch: {
-    width: 16, height: 16, borderRadius: 8,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
-  },
-  colorSwatchLarge: {
-    width: 40, height: 40, borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
-  },
-  colorRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14,
-    borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
-  },
+  colorSwatch: { width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  colorSwatchLarge: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  colorRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
   colorRowActive: { borderColor: '#30D158', backgroundColor: 'rgba(48,209,88,0.08)' },
   colorRowName: { color: 'white', fontSize: 15, fontWeight: '600', flex: 1 },
-  confirmBtn: {
-    backgroundColor: '#0A84FF', borderRadius: 14,
-    paddingVertical: 15, alignItems: 'center',
-  },
+  confirmBtn: { borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   confirmBtnText: { color: 'white', fontWeight: '700', fontSize: 15 },
-  skipColorBtn: {
-    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14,
-    paddingVertical: 13, alignItems: 'center',
-  },
+  skipColorBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
   skipColorText: { color: 'rgba(255,255,255,0.5)', fontWeight: '600', fontSize: 14 },
-  scopeOption: {
-    backgroundColor: '#0D1520', borderRadius: 14, padding: 18,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-  },
+  scopeOption: { backgroundColor: '#0D1520', borderRadius: 14, padding: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   scopeOptionAll: { borderColor: 'rgba(48,209,88,0.2)' },
   scopeOptionTitle: { color: 'white', fontWeight: '700', fontSize: 16, marginBottom: 4 },
   scopeOptionDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },

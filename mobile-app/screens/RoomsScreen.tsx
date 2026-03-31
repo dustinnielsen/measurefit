@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { roomsService } from '../lib/supabase';
 
 const ROOM_ICONS: Record<string, string> = {
@@ -22,9 +23,12 @@ function roomIcon(name: string) {
 
 export default function RoomsScreen({ navigation }: any) {
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
   const [rooms, setRooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const brandColor = tenantConfig.primary_color;
 
   const loadRooms = async () => {
     if (!dealer) return;
@@ -50,7 +54,7 @@ export default function RoomsScreen({ navigation }: any) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color="#0A84FF" size="large" />
+        <ActivityIndicator color={brandColor} size="large" />
       </View>
     );
   }
@@ -59,26 +63,29 @@ export default function RoomsScreen({ navigation }: any) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Rooms</Text>
-        <View style={styles.coverageBadge}>
-          <Text style={styles.coverageText}>{coveredWindows}/{totalWindows} covered</Text>
+        <View style={[styles.coverageBadge, { backgroundColor: brandColor + '26' }]}>
+          <Text style={[styles.coverageText, { color: brandColor }]}>{coveredWindows}/{totalWindows} covered</Text>
         </View>
       </View>
 
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
+        <View style={[styles.progressFill, { width: `${progress * 100}%` as any, backgroundColor: brandColor }]} />
       </View>
 
       <FlatList
         data={rooms}
         keyExtractor={r => r.id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0A84FF" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brandColor} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🏠</Text>
             <Text style={styles.emptyTitle}>No rooms yet</Text>
-            <Text style={styles.emptyDesc}>Scan a window to create your first room</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('Scan')}>
+            <Text style={styles.emptyDesc}>Scan a {tenantConfig.product_noun} to create your first room</Text>
+            <TouchableOpacity
+              style={[styles.emptyBtn, { backgroundColor: brandColor }]}
+              onPress={() => navigation.navigate('Scan')}
+            >
               <Text style={styles.emptyBtnText}>Go to Scanner</Text>
             </TouchableOpacity>
           </View>
@@ -96,7 +103,7 @@ export default function RoomsScreen({ navigation }: any) {
                 <View>
                   <Text style={styles.roomName}>{room.name}</Text>
                   <Text style={styles.roomSub}>
-                    {windows.length} window{windows.length !== 1 ? 's' : ''}
+                    {windows.length} {windows.length !== 1 ? tenantConfig.product_noun_plural : tenantConfig.product_noun}
                     {windows.length > 0 ? ` · ${covered} covered` : ''}
                   </Text>
                 </View>
@@ -116,7 +123,7 @@ export default function RoomsScreen({ navigation }: any) {
         ListFooterComponent={
           rooms.length > 0 ? (
             <TouchableOpacity style={styles.addRoomBtn} onPress={() => navigation.navigate('Scan')}>
-              <Text style={styles.addRoomText}>+ Scan New Window</Text>
+              <Text style={styles.addRoomText}>+ Scan New {tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
             </TouchableOpacity>
           ) : null
         }
@@ -133,10 +140,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   headerTitle: { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  coverageBadge: { backgroundColor: 'rgba(10,132,255,0.15)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
-  coverageText: { color: '#0A84FF', fontSize: 12, fontWeight: '700' },
+  coverageBadge: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
+  coverageText: { fontSize: 12, fontWeight: '700' },
   progressTrack: { height: 4, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 20, borderRadius: 2, marginBottom: 16, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#0A84FF', borderRadius: 2 },
+  progressFill: { height: '100%', borderRadius: 2 },
   list: { padding: 20, paddingTop: 4, gap: 10, paddingBottom: 40 },
   roomCard: {
     backgroundColor: '#0D1520', borderRadius: 16,
@@ -159,7 +166,7 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 56 },
   emptyTitle: { color: 'white', fontSize: 20, fontWeight: '700' },
   emptyDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 14 },
-  emptyBtn: { marginTop: 8, backgroundColor: '#0A84FF', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
+  emptyBtn: { marginTop: 8, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
   emptyBtnText: { color: 'white', fontWeight: '700', fontSize: 14 },
   addRoomBtn: {
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',

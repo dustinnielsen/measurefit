@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './context/AuthContext';
-
+import { TenantProvider } from './context/TenantContext';
 // Screens
 import LoginScreen from './screens/LoginScreen';
 import ScanScreen from './screens/ScanScreen';
@@ -16,7 +16,6 @@ import RoomDetailScreen from './screens/RoomDetailScreen';
 import QuoteScreen from './screens/QuoteScreen';
 import QuoteBuilderScreen from './screens/QuoteBuilderScreen';
 import SettingsScreen from './screens/SettingsScreen';
-
 import { TabBarIcon } from './components/TabBarIcon';
 
 const Tab = createBottomTabNavigator();
@@ -107,7 +106,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <RootNavigator />
+        <TenantProvider>
+          <RootNavigator />
+        </TenantProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

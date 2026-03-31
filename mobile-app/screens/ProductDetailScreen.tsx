@@ -4,14 +4,18 @@ import {
   TouchableOpacity, ActivityIndicator, Alert,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { productsService } from '../lib/supabase';
 
 export default function ProductDetailScreen({ route, navigation }: any) {
   const { productId } = route.params;
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [selectedColor, setSelectedColor] = useState(0);
+
+  const brandColor = tenantConfig.primary_color;
 
   useEffect(() => {
     loadProduct();
@@ -36,7 +40,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
       : null;
 
   if (loading) {
-    return <View style={styles.centered}><ActivityIndicator color="#0A84FF" size="large" /></View>;
+    return <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>;
   }
 
   if (!product) {
@@ -44,7 +48,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
       <View style={styles.centered}>
         <Text style={styles.notFound}>Product not found</Text>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.goBack}>← Go back</Text>
+          <Text style={[styles.goBack, { color: brandColor }]}>← Go back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -60,7 +64,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           <Text style={styles.heroEmoji}>{categoryEmoji(product.category)}</Text>
           <Text style={styles.productName}>{product.name}</Text>
           <View style={styles.heroMeta}>
-            <Text style={styles.categoryTag}>{product.category}</Text>
+            <Text style={[styles.categoryTag, { color: brandColor }]}>{product.category}</Text>
             <Text style={styles.dot}>·</Text>
             <Text style={styles.material}>{product.material}</Text>
             {product.is_motorized && (
@@ -113,7 +117,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           <View style={styles.priceCard}>
             <View>
               <Text style={styles.priceAmount}>${price}</Text>
-              <Text style={styles.priceUnit}>per window · custom cut</Text>
+              <Text style={styles.priceUnit}>per {tenantConfig.product_noun} · custom cut</Text>
             </View>
             <View style={styles.stockBadge}>
               <Text style={styles.stockText}>✓ In Stock</Text>
@@ -121,7 +125,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           </View>
 
           <TouchableOpacity
-            style={styles.addToQuoteBtn}
+            style={[styles.addToQuoteBtn, { backgroundColor: brandColor }]}
             onPress={() => navigation.navigate('Quotes', {
               screen: 'QuoteBuilder',
               params: { productId: product.id, productName: product.name, price },
@@ -146,7 +150,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#080C14' },
   centered: { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center', gap: 12 },
   notFound: { color: 'rgba(255,255,255,0.5)', fontSize: 16 },
-  goBack: { color: '#0A84FF', fontWeight: '600' },
+  goBack: { fontWeight: '600' },
   hero: {
     backgroundColor: '#0D1A2D', paddingTop: 60, paddingHorizontal: 20, paddingBottom: 24,
     alignItems: 'center', gap: 8,
@@ -161,7 +165,7 @@ const styles = StyleSheet.create({
   heroEmoji: { fontSize: 72, marginBottom: 8 },
   productName: { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5, textAlign: 'center' },
   heroMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  categoryTag: { color: '#0A84FF', fontWeight: '600', fontSize: 13 },
+  categoryTag: { fontWeight: '600', fontSize: 13 },
   dot: { color: 'rgba(255,255,255,0.2)' },
   material: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
   motorBadge: { backgroundColor: 'rgba(48,209,88,0.15)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
@@ -188,9 +192,6 @@ const styles = StyleSheet.create({
   priceUnit: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
   stockBadge: { backgroundColor: 'rgba(48,209,88,0.1)', borderRadius: 8, padding: 8 },
   stockText: { color: '#30D158', fontWeight: '700', fontSize: 12 },
-  addToQuoteBtn: {
-    backgroundColor: '#0A84FF', borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center',
-  },
+  addToQuoteBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   addToQuoteBtnText: { color: 'white', fontWeight: '700', fontSize: 16 },
 });

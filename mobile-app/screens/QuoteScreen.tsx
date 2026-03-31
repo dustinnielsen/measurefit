@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { quotesService } from '../lib/supabase';
 import type { Quote } from '../lib/supabase';
 
@@ -26,11 +27,14 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function QuoteScreen({ navigation }: any) {
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const brandColor = tenantConfig.primary_color;
 
   useFocusEffect(useCallback(() => {
     if (dealer) loadQuotes();
@@ -68,7 +72,7 @@ export default function QuoteScreen({ navigation }: any) {
     .reduce((a: any, q: any) => a + (q.total_cents ?? 0), 0);
 
   if (loading) {
-    return <View style={styles.centered}><ActivityIndicator color="#0A84FF" size="large" /></View>;
+    return <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>;
   }
 
   return (
@@ -81,7 +85,7 @@ export default function QuoteScreen({ navigation }: any) {
           )}
         </View>
         <TouchableOpacity
-          style={styles.newQuoteBtn}
+          style={[styles.newQuoteBtn, { backgroundColor: brandColor }]}
           onPress={() => navigation.navigate('QuoteBuilder', {})}
         >
           <Text style={styles.newQuoteBtnText}>+ New</Text>
@@ -92,13 +96,22 @@ export default function QuoteScreen({ navigation }: any) {
         data={quotes}
         keyExtractor={(q: any) => q.id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadQuotes(); }} tintColor="#0A84FF" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); loadQuotes(); }}
+            tintColor={brandColor}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>📋</Text>
             <Text style={styles.emptyTitle}>No quotes yet</Text>
-            <Text style={styles.emptyDesc}>Scan windows and build your first quote</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('QuoteBuilder', {})}>
+            <Text style={styles.emptyDesc}>Scan {tenantConfig.product_noun_plural} and build your first quote</Text>
+            <TouchableOpacity
+              style={[styles.emptyBtn, { backgroundColor: brandColor }]}
+              onPress={() => navigation.navigate('QuoteBuilder', {})}
+            >
               <Text style={styles.emptyBtnText}>Create Quote</Text>
             </TouchableOpacity>
           </View>
@@ -183,7 +196,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
   headerSub: { color: '#30D158', fontSize: 13, fontWeight: '600', marginTop: 2 },
-  newQuoteBtn: { backgroundColor: '#0A84FF', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8 },
+  newQuoteBtn: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8 },
   newQuoteBtnText: { color: 'white', fontWeight: '700', fontSize: 14 },
   list: { padding: 20, gap: 10, paddingBottom: 40 },
   cardWrapper: { position: 'relative' },
@@ -203,9 +216,7 @@ const styles = StyleSheet.create({
   quoteTotal: { color: 'white', fontWeight: '800', fontSize: 18 },
   statusBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   statusText: { fontSize: 10, fontWeight: '700' },
-  menuBtn: {
-    paddingHorizontal: 12, paddingVertical: 16, justifyContent: 'center',
-  },
+  menuBtn: { paddingHorizontal: 12, paddingVertical: 16, justifyContent: 'center' },
   menuBtnText: { color: 'rgba(255,255,255,0.4)', fontSize: 22, fontWeight: '700' },
   dropdown: {
     backgroundColor: '#1C2B3A', borderRadius: 12,
@@ -220,6 +231,6 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 56 },
   emptyTitle: { color: 'white', fontSize: 20, fontWeight: '700' },
   emptyDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 14 },
-  emptyBtn: { marginTop: 8, backgroundColor: '#0A84FF', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
+  emptyBtn: { marginTop: 8, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
   emptyBtnText: { color: 'white', fontWeight: '700', fontSize: 14 },
 });

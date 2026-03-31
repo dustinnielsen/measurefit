@@ -6,6 +6,9 @@ import SignupPage from './SignupPage';
 import BillingSuccessPage from './BillingSuccessPage';
 import AdminDashboard from './AdminDashboard';
 import HomePage from './Pages/HomePage';
+import MeasureFitHomePage from './Pages/MeasureFitHomePage';
+
+const isMeasureFit = window.location.hostname.includes('measurefit.io');
 
 export default function App() {
   const [dealerId, setDealerId] = useState<string | null>(null);
@@ -18,7 +21,7 @@ export default function App() {
   return (
     <TenantProvider dealerId={dealerId}>
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={isMeasureFit ? <MeasureFitHomePage /> : <HomePage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/quote/:token" element={<QuoteTokenWrapper />} />
         <Route path="/billing-success" element={<BillingSuccessPage />} />

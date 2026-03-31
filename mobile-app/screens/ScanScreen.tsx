@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { roomsService, scanService } from '../lib/supabase';
 
 const Alert = {
@@ -36,6 +37,7 @@ const MARKER_ID = 35;
 
 export default function ScanScreen({ navigation }: any) {
   const { dealer } = useAuth();
+  const { tenantConfig } = useTenant();
 
   const [step, setStep] = useState<ScanStep>('sticker');
   const [mountType, setMountType] = useState<MountType>('inside');
@@ -811,37 +813,6 @@ CV.binaryBorder = function(imageSrc, dst){
   return dst;
 };
 
-/*
-Copyright (c) 2020 Damiano Falcioni
-Copyright (c) 2011 Juan Mellado
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
-/*
-References:
-- "ArUco: a minimal library for Augmented Reality applications based on OpenCv"
-  http://www.uco.es/investiga/grupos/ava/node/26
-- "js-aruco: a port to JavaScript of the ArUco library"
-  https://github.com/jcmellado/js-aruco
-*/
-
 var AR = {};
 var CV = window.CV;
 window.AR = AR;
@@ -1013,13 +984,12 @@ AR.Detector.prototype.detectStreamInit = function (width, height, callback) {
   this.streamConfig = {};
   this.streamConfig.width = width;
   this.streamConfig.height = height;
-  this.streamConfig.imageSize = width * height * 4; //provided image must be a sequence of rgba bytes (4 bytes represent a pixel)
+  this.streamConfig.imageSize = width * height * 4;
   this.streamConfig.index = 0;
   this.streamConfig.imageData = new Uint8ClampedArray(this.streamConfig.imageSize);
   this.streamConfig.callback = callback || function (image, markerList) {};
 };
 
-//accept data chunks of different sizes
 AR.Detector.prototype.detectStream = function (data) {
   for (var i = 0; i < data.length; i++) {
     this.streamConfig.imageData[this.streamConfig.index] = data[i];
@@ -1036,124 +1006,61 @@ AR.Detector.prototype.detectStream = function (data) {
   }
 };
 
-AR.Detector.prototype.detectMJPEGStreamInit = function (width, height, callback, decoderFn) {
-  this.mjpeg = {
-    decoderFn: decoderFn,
-    chunks: [],
-    SOI: [0xff, 0xd8],
-    EOI: [0xff, 0xd9]
-  };
-  this.detectStreamInit(width, height, callback);
-};
-
-AR.Detector.prototype.detectMJPEGStream = function (chunk) {
-  var eoiPos = chunk.findIndex(function (element, index, array) {
-    return this.mjpeg.EOI[0] == element && array.length > index + 1 && this.mjpeg.EOI[1] == array[index + 1];
-  });
-  var soiPos = chunk.findIndex(function (element, index, array) {
-    return this.mjpeg.SOI[0] == element && array.length > index + 1 && this.mjpeg.SOI[1] == array[index + 1];
-  });
-
-  if (eoiPos === -1) {
-    this.mjpeg.chunks.push(chunk);
-  } else {
-    var part1 = chunk.slice(0, eoiPos + 2);
-    if (part1.length) {
-      this.mjpeg.chunks.push(part1);
-    }
-    if (this.mjpeg.chunks.length) {
-      var jpegImage = this.mjpeg.chunks.flat();
-      var rgba = this.mjpeg.decoderFn(jpegImage);
-      this.detectStream(rgba);
-    }
-    this.mjpeg.chunks = [];
-  }
-  if (soiPos > -1) {
-    this.mjpeg.chunks = [];
-    this.mjpeg.chunks.push(chunk.slice(soiPos));
-  }
-};
-
 AR.Detector.prototype.detect = function (image) {
   CV.grayscale(image, this.grey);
   CV.adaptiveThreshold(this.grey, this.thres, 2, 7);
-
   this.contours = CV.findContours(this.thres, this.binary);
-  //Scale Fix: https://stackoverflow.com/questions/35936397/marker-detection-on-paper-sheet-using-javascript
-  //this.candidates = this.findCandidates(this.contours, image.width * 0.20, 0.05, 10);
   this.candidates = this.findCandidates(this.contours, image.width * 0.01, 0.05, 10);
   this.candidates = this.clockwiseCorners(this.candidates);
   this.candidates = this.notTooNear(this.candidates, 10);
-
   return this.findMarkers(this.grey, this.candidates, 49);
 };
 
 AR.Detector.prototype.findCandidates = function (contours, minSize, epsilon, minLength) {
-  var candidates = [],
-    len = contours.length,
-    contour, poly, i;
-
+  var candidates = [], len = contours.length, contour, poly, i;
   this.polys = [];
-
   for (i = 0; i < len; ++i) {
     contour = contours[i];
-
     if (contour.length >= minSize) {
       poly = CV.approxPolyDP(contour, contour.length * epsilon);
-
       this.polys.push(poly);
-
       if ((4 === poly.length) && (CV.isContourConvex(poly))) {
-
         if (CV.minEdgeLength(poly) >= minLength) {
           candidates.push(poly);
         }
       }
     }
   }
-
   return candidates;
 };
 
 AR.Detector.prototype.clockwiseCorners = function (candidates) {
-  var len = candidates.length,
-    dx1, dx2, dy1, dy2, swap, i;
-
+  var len = candidates.length, dx1, dx2, dy1, dy2, swap, i;
   for (i = 0; i < len; ++i) {
     dx1 = candidates[i][1].x - candidates[i][0].x;
     dy1 = candidates[i][1].y - candidates[i][0].y;
     dx2 = candidates[i][2].x - candidates[i][0].x;
     dy2 = candidates[i][2].y - candidates[i][0].y;
-
     if ((dx1 * dy2 - dy1 * dx2) < 0) {
       swap = candidates[i][1];
       candidates[i][1] = candidates[i][3];
       candidates[i][3] = swap;
     }
   }
-
   return candidates;
 };
 
 AR.Detector.prototype.notTooNear = function (candidates, minDist) {
-  var notTooNear = [],
-    len = candidates.length,
-    dist, dx, dy, i, j, k;
-
+  var notTooNear = [], len = candidates.length, dist, dx, dy, i, j, k;
   for (i = 0; i < len; ++i) {
-
     for (j = i + 1; j < len; ++j) {
       dist = 0;
-
       for (k = 0; k < 4; ++k) {
         dx = candidates[i][k].x - candidates[j][k].x;
         dy = candidates[i][k].y - candidates[j][k].y;
-
         dist += dx * dx + dy * dy;
       }
-
       if ((dist / 4) < (minDist * minDist)) {
-
         if (CV.perimeter(candidates[i]) < CV.perimeter(candidates[j])) {
           candidates[i].tooNear = true;
         } else {
@@ -1162,34 +1069,23 @@ AR.Detector.prototype.notTooNear = function (candidates, minDist) {
       }
     }
   }
-
   for (i = 0; i < len; ++i) {
     if (!candidates[i].tooNear) {
       notTooNear.push(candidates[i]);
     }
   }
-
   return notTooNear;
 };
 
 AR.Detector.prototype.findMarkers = function (imageSrc, candidates, warpSize) {
-  var markers = [],
-    len = candidates.length,
-    candidate, marker, i;
-
+  var markers = [], len = candidates.length, candidate, marker, i;
   for (i = 0; i < len; ++i) {
     candidate = candidates[i];
-
     CV.warp(imageSrc, this.homography, candidate, warpSize);
-
     CV.threshold(this.homography, this.homography, CV.otsu(this.homography));
-
     marker = this.getMarker(this.homography, candidate);
-    if (marker) {
-      markers.push(marker);
-    }
+    if (marker) { markers.push(marker); }
   }
-
   return markers;
 };
 
@@ -1197,43 +1093,22 @@ AR.Detector.prototype.getMarker = function (imageSrc, candidate) {
   var markSize = this.dictionary.markSize;
   var width = (imageSrc.width / markSize) >>> 0,
     minZero = (width * width) >> 1,
-    bits = [],
-    rotations = [],
-    square, inc, i, j;
-
+    bits = [], rotations = [], square, inc, i, j;
   for (i = 0; i < markSize; ++i) {
     inc = (0 === i || (markSize - 1) === i) ? 1 : (markSize - 1);
-
     for (j = 0; j < markSize; j += inc) {
-      square = {
-        x: j * width,
-        y: i * width,
-        width: width,
-        height: width
-      };
-      if (CV.countNonZero(imageSrc, square) > minZero) {
-        return null;
-      }
+      square = { x: j * width, y: i * width, width: width, height: width };
+      if (CV.countNonZero(imageSrc, square) > minZero) { return null; }
     }
   }
-
   for (i = 0; i < markSize - 2; ++i) {
     bits[i] = [];
-
     for (j = 0; j < markSize - 2; ++j) {
-      square = {
-        x: (j + 1) * width,
-        y: (i + 1) * width,
-        width: width,
-        height: width
-      };
-
+      square = { x: (j + 1) * width, y: (i + 1) * width, width: width, height: width };
       bits[i][j] = CV.countNonZero(imageSrc, square) > minZero ? 1 : 0;
     }
   }
-
   rotations[0] = bits;
-
   var foundMin = null;
   var rot = 0;
   for (i = 0; i < 4; i++) {
@@ -1241,42 +1116,31 @@ AR.Detector.prototype.getMarker = function (imageSrc, candidate) {
     if (found && (foundMin === null || found.distance < foundMin.distance)) {
       foundMin = found;
       rot = i;
-      if (foundMin.distance === 0)
-        break;
+      if (foundMin.distance === 0) break;
     }
     rotations[i + 1] = this.rotate(rotations[i]);
   }
-
   if (foundMin)
     return new AR.Marker(foundMin.id, this.rotate2(candidate, 4 - rot), foundMin.distance);
-
   return null;
 };
 
 AR.Detector.prototype.rotate = function (src) {
-  var dst = [],
-    len = src.length,
-    i, j;
-
+  var dst = [], len = src.length, i, j;
   for (i = 0; i < len; ++i) {
     dst[i] = [];
     for (j = 0; j < src[i].length; ++j) {
       dst[i][j] = src[src[i].length - j - 1][i];
     }
   }
-
   return dst;
 };
 
 AR.Detector.prototype.rotate2 = function (src, rotation) {
-  var dst = [],
-    len = src.length,
-    i;
-
+  var dst = [], len = src.length, i;
   for (i = 0; i < len; ++i) {
     dst[i] = src[(rotation + i) % len];
   }
-
   return dst;
 };
 `;
@@ -1354,10 +1218,8 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
         return;
       }
       const W = video.videoWidth, H = video.videoHeight;
-      const W2 = canvas.width = W;
-      const H2 = canvas.height = H;
-      overlay.width = W;
-      overlay.height = H;
+      canvas.width = W; canvas.height = H;
+      overlay.width = W; overlay.height = H;
 
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(video, 0, 0, W, H);
@@ -1420,7 +1282,6 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
           setMarkerDetected(true);
           setCalibrationLocked(true);
         }
-
         oct.beginPath();
         oct.moveTo(mc[0].x, mc[0].y);
         mc.forEach((c: any) => oct.lineTo(c.x, c.y));
@@ -1434,10 +1295,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
         oct.font = 'bold 13px sans-serif';
         oct.fillText(`✓ ${ppi.toFixed(0)} px/in`, mc[0].x, mc[0].y - 8);
       } else {
-        // Only clear detected state if calibration not yet locked
-        if (!ppiRef.current) {
-          setMarkerDetected(false);
-        }
+        if (!ppiRef.current) { setMarkerDetected(false); }
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -1459,14 +1317,10 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
 
     let x: number, y: number;
     if (vH > vW) {
-      // Portrait video displayed in landscape container via objectFit:cover
-      const scale = rect.width / vW;           // e.g. 362/480 = 0.754
-      const displayedH = vH * scale;           // e.g. 640*0.754 = 482
-      const cropTop = (displayedH - rect.height) / 2; // e.g. (482-217)/2 = 132
-
-      // X is inverted for rear camera portrait on iPhone
+      const scale = rect.width / vW;
+      const displayedH = vH * scale;
+      const cropTop = (displayedH - rect.height) / 2;
       x = vW - tapX / scale;
-      // Y needs crop offset
       y = (tapY + cropTop) / scale;
     } else {
       x = tapX * (vW / rect.width);
@@ -1564,15 +1418,18 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
   const cornersDone = Object.keys(windowCorners).length;
   const isCalibrated = calibrationLocked || markerDetected;
 
+  // Derive dynamic styles from tenant config
+  const brandColor = tenantConfig.primary_color;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Window Scanner</Text>
+        <Text style={styles.headerTitle}>{tenantConfig.brand_name} Scanner</Text>
         <View style={styles.stepIndicator}>
           {(['sticker', 'mount', 'scan', 'save'] as const).map((s, i) => (
             <View key={s} style={[
               styles.stepDot,
-              step === s && styles.stepDotActive,
+              step === s && { backgroundColor: brandColor, width: 20 },
               step === 'review' && i <= 2 && styles.stepDotDone,
               step === 'save' && styles.stepDotDone,
             ]} />
@@ -1609,7 +1466,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
                   </View>
                 ))}
               </View>
-              <Text style={styles.markerLabel}>NSS Calibration Marker · Print at 2"×2"</Text>
+              <Text style={styles.markerLabel}>Calibration Marker · Print at 2"×2"</Text>
             </View>
             <View style={styles.tip}>
               <Text style={styles.tipText}>💡 Tape flat on the window sill or inside frame edge. Keep fully visible and unfolded.</Text>
@@ -1617,7 +1474,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
             <View style={styles.tip}>
               <Text style={styles.tipText}>📐 Step close to calibrate (marker fills ~1/4 of screen), then step back to frame the full window.</Text>
             </View>
-            <TouchableOpacity style={styles.btn} onPress={() => setStep('mount')}>
+            <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={() => setStep('mount')}>
               <Text style={styles.btnText}>Marker Placed →</Text>
             </TouchableOpacity>
           </View>
@@ -1627,11 +1484,11 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
           <View style={styles.card}>
             <Text style={styles.emoji}>🪟</Text>
             <Text style={styles.title}>Select Mount Type</Text>
-            <Text style={styles.desc}>Measurements are from the wall edge of the window frame.</Text>
+            <Text style={styles.desc}>Measurements are from the wall edge of the {tenantConfig.product_noun} frame.</Text>
             {(['inside', 'outside'] as MountType[]).map(mt => (
               <TouchableOpacity
                 key={mt}
-                style={[styles.option, mountType === mt && styles.optionActive]}
+                style={[styles.option, mountType === mt && [styles.optionActive, { borderColor: brandColor }]]}
                 onPress={() => setMountType(mt)}
               >
                 <View style={styles.optionHeader}>
@@ -1640,7 +1497,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
                 </View>
                 <Text style={styles.optionDesc}>
                   {mt === 'inside'
-                    ? 'Covering fits inside the frame. Measures opening edge-to-edge from wall to wall.'
+                    ? `Covering fits inside the frame. Measures ${tenantConfig.measurement_unit_label} edge-to-edge from wall to wall.`
                     : 'Covering overlaps the frame. Overlap added to all sides.'}
                 </Text>
                 {mt === 'outside' && mountType === 'outside' && (
@@ -1663,7 +1520,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
               <TouchableOpacity style={styles.btnSec} onPress={() => setStep('sticker')}>
                 <Text style={styles.btnSecText}>← Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, { flex: 1 }]} onPress={goToScan}>
+              <TouchableOpacity style={[styles.btn, { flex: 1, backgroundColor: brandColor }]} onPress={goToScan}>
                 <Text style={styles.btnText}>Open Camera →</Text>
               </TouchableOpacity>
             </View>
@@ -1694,7 +1551,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
                       : isCalibrated
                       ? <p style={{ color: '#30D158', margin: 0, fontSize: 13, fontWeight: 700 }}>
                           ✓ Calibrated · {pixelsPerInch} px/in
-                          {tapMode ? ` · Tap corner ${cornersDone + 1}/4` : ' · Step back, then tap Mark Corners'}
+                          {tapMode ? ` · Tap corner ${cornersDone + 1}/4` : ` · Step back, then tap Mark ${tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)} Corners`}
                         </p>
                       : <p style={{ color: '#FF9F0A', margin: 0, fontSize: 13, fontWeight: 600 }}>
                           ⏳ Point at marker to calibrate...
@@ -1708,7 +1565,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
 
             <View style={{ gap: 12 }}>
               {cameraError && (
-                <TouchableOpacity style={styles.btn} onPress={startCamera}>
+                <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={startCamera}>
                   <Text style={styles.btnText}>Retry Camera</Text>
                 </TouchableOpacity>
               )}
@@ -1728,7 +1585,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.readyTitle}>Calibrated ✓</Text>
-                    <Text style={styles.readyDesc}>Step back so the full window is in frame, then tap "Mark Corners" and tap all 4 corners.</Text>
+                    <Text style={styles.readyDesc}>Step back so the full {tenantConfig.product_noun} is in frame, then tap "Mark Corners" and tap all 4 corners.</Text>
                   </View>
                 </View>
               )}
@@ -1749,7 +1606,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
                   <Text style={styles.btnSecText}>← Back</Text>
                 </TouchableOpacity>
                 {isCalibrated && !tapMode && (
-                  <TouchableOpacity style={[styles.btn, { flex: 1 }]} onPress={() => { setWindowCorners({}); setTapMode(true); }}>
+                  <TouchableOpacity style={[styles.btn, { flex: 1, backgroundColor: brandColor }]} onPress={() => { setWindowCorners({}); setTapMode(true); }}>
                     <Text style={styles.btnText}>Mark Corners →</Text>
                   </TouchableOpacity>
                 )}
@@ -1773,8 +1630,8 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
                 [measurement.heightIn + '"', 'Height'],
                 [measurement.areaFt + ' ft²', 'Area'],
               ].map(([val, lbl]) => (
-                <View key={lbl} style={styles.mCell}>
-                  <Text style={styles.mVal}>{val}</Text>
+                <View key={lbl} style={[styles.mCell, { borderColor: brandColor + '33', backgroundColor: brandColor + '1A' }]}>
+                  <Text style={[styles.mVal, { color: brandColor }]}>{val}</Text>
                   <Text style={styles.mLbl}>{lbl}</Text>
                 </View>
               ))}
@@ -1787,9 +1644,9 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
               </View>
             )}
             <View style={styles.depthBox}>
-              <Text style={styles.depthTitle}>⚠️ Check Window Depth</Text>
+              <Text style={styles.depthTitle}>⚠️ Check {tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)} Depth</Text>
               <Text style={styles.depthText}>
-                Measure the frame depth (front to back) with a tape measure. Depths under 2.5" may limit product options — some cellular shades and shutters require minimum frame depth.
+                Measure the frame depth (front to back) with a tape measure. Depths under 2.5" may limit product options.
               </Text>
             </View>
             <View style={[styles.accBadge, !markerDetected && styles.accWarn]}>
@@ -1801,7 +1658,7 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
               <TouchableOpacity style={styles.btnSec} onPress={() => { setMeasurement(null); setWindowCorners({}); setCalibrationLocked(false); ppiRef.current = null; goToScan(); }}>
                 <Text style={styles.btnSecText}>Rescan</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, { flex: 1 }]} onPress={() => setStep('save')}>
+              <TouchableOpacity style={[styles.btn, { flex: 1, backgroundColor: brandColor }]} onPress={() => setStep('save')}>
                 <Text style={styles.btnText}>Save Measurement →</Text>
               </TouchableOpacity>
             </View>
@@ -1815,24 +1672,24 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
               {measurement.widthIn}" × {measurement.heightIn}" · {mountType} mount
               {mountType === 'outside' ? ` · Order: ${orderWidth}" × ${orderHeight}"` : ''}
             </Text>
-            <Text style={styles.fieldLbl}>WINDOW LABEL</Text>
+            <Text style={styles.fieldLbl}>{tenantConfig.product_noun.toUpperCase()} LABEL</Text>
             <TextInput value={saveForm.windowLabel}
               onChangeText={t => setSaveForm((f: any) => ({ ...f, windowLabel: t }))}
-              style={styles.input} placeholder="e.g. South Window, Bay Window"
+              style={styles.input} placeholder={`e.g. South ${tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}, Bay ${tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}`}
               placeholderTextColor="rgba(255,255,255,0.25)" />
             <Text style={styles.fieldLbl}>ROOM</Text>
             {rooms.map(r => (
               <TouchableOpacity key={r.id}
-                style={[styles.roomOpt, saveForm.roomId === r.id && styles.roomOptActive]}
+                style={[styles.roomOpt, saveForm.roomId === r.id && [styles.roomOptActive, { borderColor: brandColor, backgroundColor: brandColor + '1A' }]]}
                 onPress={() => setSaveForm((f: any) => ({ ...f, roomId: r.id, isNewRoom: false, roomName: '' }))}
               >
                 <Text style={styles.roomOptTxt}>{r.name}</Text>
-                <Text style={styles.roomOptSub}>{r.windows?.length ?? 0} windows</Text>
+                <Text style={styles.roomOptSub}>{r.windows?.length ?? 0} {tenantConfig.product_noun_plural}</Text>
                 {saveForm.roomId === r.id && <Text style={styles.check}>✓</Text>}
               </TouchableOpacity>
             ))}
             <TouchableOpacity
-              style={[styles.roomOpt, { borderStyle: 'dashed' }, saveForm.isNewRoom && styles.roomOptActive]}
+              style={[styles.roomOpt, { borderStyle: 'dashed' }, saveForm.isNewRoom && [styles.roomOptActive, { borderColor: brandColor, backgroundColor: brandColor + '1A' }]]}
               onPress={() => setSaveForm((f: any) => ({ ...f, isNewRoom: true, roomId: null }))}
             >
               <Text style={styles.roomOptTxt}>+ New Room</Text>
@@ -1847,7 +1704,8 @@ AR.Detector.prototype.rotate2 = function (src, rotation) {
               <TouchableOpacity style={styles.btnSec} onPress={() => setStep('review')}>
                 <Text style={styles.btnSecText}>← Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, { flex: 1 }, saving && { opacity: 0.5 }]}
+              <TouchableOpacity
+                style={[styles.btn, { flex: 1, backgroundColor: brandColor }, saving && { opacity: 0.5 }]}
                 onPress={handleSave} disabled={saving}>
                 {saving ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.btnText}>Save ✓</Text>}
               </TouchableOpacity>
@@ -1866,7 +1724,6 @@ const styles = StyleSheet.create({
   headerTitle: { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
   stepIndicator: { flexDirection: 'row', gap: 6 },
   stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.15)' },
-  stepDotActive: { backgroundColor: '#0A84FF', width: 20 },
   stepDotDone: { backgroundColor: '#30D158' },
   content: { padding: 20, paddingBottom: 60 },
   card: { gap: 14 },
@@ -1879,7 +1736,7 @@ const styles = StyleSheet.create({
   tip: { backgroundColor: 'rgba(255,214,10,0.08)', borderWidth: 1, borderColor: 'rgba(255,214,10,0.2)', borderRadius: 10, padding: 12 },
   tipText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 20 },
   option: { backgroundColor: '#0D1520', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 14, padding: 16, gap: 8 },
-  optionActive: { borderColor: '#0A84FF', backgroundColor: 'rgba(10,132,255,0.08)' },
+  optionActive: { backgroundColor: 'rgba(10,132,255,0.08)' },
   optionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   optionTitle: { color: 'white', fontWeight: '700', fontSize: 16 },
   optionDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 20 },
@@ -1903,8 +1760,8 @@ const styles = StyleSheet.create({
   cDotTxt: { color: 'white', fontWeight: '700', fontSize: 12 },
   cornerTxt: { color: 'rgba(255,255,255,0.5)', fontSize: 12, flex: 1 },
   measureRow: { flexDirection: 'row', gap: 10 },
-  mCell: { flex: 1, backgroundColor: 'rgba(10,132,255,0.1)', borderWidth: 1, borderColor: 'rgba(10,132,255,0.2)', borderRadius: 12, padding: 12, alignItems: 'center' },
-  mVal: { color: '#0A84FF', fontSize: 22, fontWeight: '800' },
+  mCell: { flex: 1, borderWidth: 1, borderRadius: 12, padding: 12, alignItems: 'center' },
+  mVal: { fontSize: 22, fontWeight: '800' },
   mLbl: { color: 'rgba(255,255,255,0.4)', fontSize: 10, marginTop: 2 },
   orderBox: { backgroundColor: 'rgba(48,209,88,0.08)', borderWidth: 1, borderColor: 'rgba(48,209,88,0.2)', borderRadius: 12, padding: 14 },
   orderTitle: { color: '#30D158', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
@@ -1919,11 +1776,11 @@ const styles = StyleSheet.create({
   fieldLbl: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
   input: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, color: 'white', fontSize: 15, padding: 12 },
   roomOpt: { backgroundColor: '#0D1520', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  roomOptActive: { borderColor: '#0A84FF', backgroundColor: 'rgba(10,132,255,0.08)' },
+  roomOptActive: { },
   roomOptTxt: { color: 'white', fontWeight: '600', fontSize: 14, flex: 1 },
   roomOptSub: { color: 'rgba(255,255,255,0.35)', fontSize: 12, marginRight: 8 },
   row: { flexDirection: 'row', gap: 10 },
-  btn: { backgroundColor: '#0A84FF', borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center' },
+  btn: { borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center' },
   btnText: { color: 'white', fontWeight: '700', fontSize: 15 },
   btnSec: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, paddingVertical: 15, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
   btnSecText: { color: 'rgba(255,255,255,0.7)', fontWeight: '600', fontSize: 14 },

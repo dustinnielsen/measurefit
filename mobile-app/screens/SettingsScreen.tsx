@@ -4,6 +4,7 @@ import {
   TextInput, Switch, Alert, ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import { dealersService } from '../lib/supabase';
 
 const BRAND_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#FF453A', '#BF5AF2', '#636366'];
@@ -15,8 +16,9 @@ const PLAN_LIMITS: Record<string, string[]> = {
 
 export default function SettingsScreen() {
   const { dealer, signOut, refreshDealer } = useAuth();
+  const { tenantConfig } = useTenant();
   const [brandName, setBrandName] = useState(dealer?.name ?? '');
-  const [brandColor, setBrandColor] = useState(dealer?.brand_color ?? '#0A84FF');
+  const [brandColor, setBrandColor] = useState(dealer?.brand_color ?? tenantConfig.primary_color);
   const [arEnabled, setArEnabled] = useState(dealer?.features?.ar_scanner !== false);
   const [autoQuote, setAutoQuote] = useState(dealer?.features?.auto_quote !== false);
   const [saving, setSaving] = useState(false);
@@ -24,15 +26,16 @@ export default function SettingsScreen() {
 
   const plan = dealer?.plan ?? 'basic';
   const planFeatures = PLAN_LIMITS[plan] ?? PLAN_LIMITS.basic;
+  const activeBrandColor = brandColor || tenantConfig.primary_color;
 
   const handleSave = async () => {
     if (!dealer) return;
     setSaving(true);
     try {
       await dealersService.updateBranding(dealer.id, {
-  app_name: brandName.trim(),
-  brand_color: brandColor,
-});
+        app_name: brandName.trim(),
+        brand_color: brandColor,
+      });
       await dealersService.updateFeatures(dealer.id, {
         ar_scanner: arEnabled,
         auto_quote: autoQuote,
@@ -84,17 +87,19 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={[styles.card, { borderColor: `${brandColor}40` }]}>
+        <View style={[styles.card, { borderColor: activeBrandColor + '40' }]}>
           <Text style={styles.cardLabel}>App Preview</Text>
           <View style={styles.previewRow}>
-            <View style={[styles.previewIcon, { backgroundColor: brandColor }]}>
+            <View style={[styles.previewIcon, { backgroundColor: activeBrandColor }]}>
               <Text style={styles.previewIconText}>
                 {(brandName || 'WF').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
               </Text>
             </View>
             <View>
-              <Text style={styles.previewName}>{brandName || 'Your Business'}</Text>
-              <Text style={[styles.previewPowered, { color: brandColor }]}>Powered by WindowFit</Text>
+              <Text style={styles.previewName}>{brandName || tenantConfig.dealer_name}</Text>
+              <Text style={[styles.previewPowered, { color: activeBrandColor }]}>
+                Powered by {tenantConfig.brand_name}
+              </Text>
             </View>
           </View>
         </View>
@@ -102,7 +107,7 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Features</Text>
           {[
-            ['AR Scanner', 'Use phone camera for measurements', arEnabled, setArEnabled],
+            ['AR Scanner', `Use phone camera for ${tenantConfig.product_noun} measurements`, arEnabled, setArEnabled],
             ['Auto Quote', 'Generate quotes from scan data', autoQuote, setAutoQuote],
           ].map(([label, desc, val, set]: any) => (
             <View key={label} style={styles.toggleRow}>
@@ -113,7 +118,7 @@ export default function SettingsScreen() {
               <Switch
                 value={val}
                 onValueChange={set}
-                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#0A84FF' }}
+                trackColor={{ false: 'rgba(255,255,255,0.15)', true: activeBrandColor }}
                 thumbColor="white"
               />
             </View>
@@ -121,7 +126,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>WindowFit License</Text>
+          <Text style={styles.cardLabel}>{tenantConfig.brand_name} License</Text>
           <View style={styles.planRow}>
             <View style={styles.planBadge}>
               <Text style={styles.planBadgeText}>{plan.toUpperCase()}</Text>
@@ -141,11 +146,16 @@ export default function SettingsScreen() {
           <Text style={styles.cardLabel}>Account</Text>
           <Text style={styles.accountInfo}>Dealer ID: <Text style={styles.accountInfoVal}>{dealer?.id?.slice(0, 8)}...</Text></Text>
           <Text style={styles.accountInfo}>Joined: <Text style={styles.accountInfoVal}>{dealer?.joined_at ? new Date(dealer.joined_at).toLocaleDateString() : '—'}</Text></Text>
-          <Text style={styles.accountInfo}>Trade: <Text style={styles.accountInfoVal}>Window Covering</Text></Text>
+          <Text style={styles.accountInfo}>Trade: <Text style={styles.accountInfoVal}>{tenantConfig.brand_name}</Text></Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.saveBtn, saved && styles.saveBtnSuccess, saving && styles.btnDisabled]}
+          style={[
+            styles.saveBtn,
+            { backgroundColor: activeBrandColor },
+            saved && styles.saveBtnSuccess,
+            saving && styles.btnDisabled,
+          ]}
           onPress={handleSave}
           disabled={saving || saved}
         >
@@ -200,7 +210,7 @@ const styles = StyleSheet.create({
   featureItem: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
   accountInfo: { color: 'rgba(255,255,255,0.35)', fontSize: 12 },
   accountInfoVal: { color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
-  saveBtn: { backgroundColor: '#0A84FF', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  saveBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   saveBtnSuccess: { backgroundColor: '#30D158' },
   saveBtnText: { color: 'white', fontWeight: '700', fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
