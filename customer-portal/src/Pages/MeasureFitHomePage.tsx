@@ -17,540 +17,394 @@ const modules = [
   { name: 'GutterFit', tagline: 'Gutters', color: '#15803D', live: false },
 ];
 
-const steps = [
-  {
-    num: '01',
-    title: 'Scan the space',
-    body: 'Your dealer uses AR + LiDAR on their phone to capture exact measurements in seconds — no tape measure, no errors.',
-  },
-  {
-    num: '02',
-    title: 'Configure & quote',
-    body: 'Products, options, and pricing auto-populate. A polished quote reaches your inbox before they leave.',
-  },
-  {
-    num: '03',
-    title: 'Approve & pay',
-    body: 'Review, sign, and pay online. Your dealer gets the order instantly with every measurement attached.',
-  },
-];
-
 export default function MeasureFitHomePage() {
-  const heroRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
-    // Stagger-reveal hero elements on load
-    const els = heroRef.current?.querySelectorAll('[data-reveal]');
-    els?.forEach((el, i) => {
-      (el as HTMLElement).style.animationDelay = `${i * 120}ms`;
-      el.classList.add('mf-revealed');
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) entry.target.classList.add('mf-in-view');
+        });
+      },
+      { threshold: 0.08 }
+    );
+    document.querySelectorAll('[data-animate]').forEach((el) => {
+      observerRef.current?.observe(el);
     });
+    return () => observerRef.current?.disconnect();
   }, []);
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         .mf-root {
-          font-family: 'DM Sans', sans-serif;
-          background: #0D3B36;
-          color: #E2F4F1;
-          min-height: 100vh;
+          font-family: 'Outfit', sans-serif;
+          color: #111;
           overflow-x: hidden;
         }
 
-        /* ── NAV ── */
-        .mf-nav {
-          position: fixed;
-          top: 0; left: 0; right: 0;
-          z-index: 100;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 20px 48px;
-          background: rgba(13,59,54,0.85);
-          backdrop-filter: blur(12px);
-          border-bottom: 1px solid rgba(94,234,212,0.12);
-        }
-        .mf-nav-logo {
-          font-family: 'Syne', sans-serif;
-          font-size: 22px;
-          font-weight: 800;
-          color: #5EEAD4;
-          letter-spacing: -0.5px;
-          text-decoration: none;
-        }
-        .mf-nav-logo span { color: #E2F4F1; }
-        .mf-nav-links {
-          display: flex;
-          align-items: center;
-          gap: 32px;
-          list-style: none;
-        }
-        .mf-nav-links a {
-          color: rgba(226,244,241,0.7);
-          text-decoration: none;
-          font-size: 14px;
-          font-weight: 500;
-          transition: color 0.2s;
-        }
-        .mf-nav-links a:hover { color: #5EEAD4; }
-        .mf-nav-cta {
-          background: #5EEAD4;
-          color: #0D3B36;
-          border: none;
-          padding: 10px 24px;
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          font-family: 'DM Sans', sans-serif;
-          text-decoration: none;
-          transition: background 0.2s, transform 0.15s;
-          display: inline-block;
-        }
-        .mf-nav-cta:hover { background: #99F6E4; transform: translateY(-1px); }
-
-        /* ── HERO ── */
-        .mf-hero {
-          position: relative;
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          padding: 120px 48px 80px;
-          overflow: hidden;
-        }
-        .mf-hero-bg {
-          position: absolute;
-          inset: 0;
-          background:
-            radial-gradient(ellipse 60% 50% at 70% 50%, rgba(15,118,110,0.35) 0%, transparent 70%),
-            radial-gradient(ellipse 40% 60% at 10% 80%, rgba(94,234,212,0.08) 0%, transparent 60%);
-          pointer-events: none;
-        }
-        .mf-hero-grid-lines {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(rgba(94,234,212,0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(94,234,212,0.04) 1px, transparent 1px);
-          background-size: 60px 60px;
-          pointer-events: none;
-        }
-        .mf-hero-content {
-          position: relative;
-          max-width: 720px;
-        }
-        .mf-hero-eyebrow {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          background: rgba(94,234,212,0.12);
-          border: 1px solid rgba(94,234,212,0.25);
-          color: #5EEAD4;
-          font-size: 12px;
-          font-weight: 500;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          padding: 6px 14px;
-          border-radius: 100px;
-          margin-bottom: 32px;
-        }
-        .mf-hero-eyebrow-dot {
-          width: 6px; height: 6px;
-          background: #5EEAD4;
-          border-radius: 50%;
-          animation: mf-pulse 2s ease-in-out infinite;
-        }
-        @keyframes mf-pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.8); }
-        }
-        .mf-hero-h1 {
-          font-family: 'Syne', sans-serif;
-          font-size: clamp(52px, 7vw, 88px);
-          font-weight: 800;
-          line-height: 1.0;
-          letter-spacing: -2px;
-          color: #E2F4F1;
-          margin-bottom: 28px;
-        }
-        .mf-hero-h1 em {
-          font-style: normal;
-          color: #5EEAD4;
-        }
-        .mf-hero-sub {
-          font-size: 18px;
-          line-height: 1.65;
-          color: rgba(226,244,241,0.65);
-          max-width: 540px;
-          margin-bottom: 48px;
-        }
-        .mf-hero-actions {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          flex-wrap: wrap;
-        }
-        .mf-btn-primary {
-          background: #5EEAD4;
-          color: #0D3B36;
-          border: none;
-          padding: 16px 36px;
-          border-radius: 10px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-          font-family: 'DM Sans', sans-serif;
-          text-decoration: none;
-          transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-          display: inline-block;
-        }
-        .mf-btn-primary:hover {
-          background: #99F6E4;
-          transform: translateY(-2px);
-          box-shadow: 0 8px 32px rgba(94,234,212,0.25);
-        }
-        .mf-btn-ghost {
-          background: transparent;
-          color: rgba(226,244,241,0.8);
-          border: 1px solid rgba(226,244,241,0.2);
-          padding: 15px 28px;
-          border-radius: 10px;
-          font-size: 16px;
-          font-weight: 500;
-          cursor: pointer;
-          font-family: 'DM Sans', sans-serif;
-          text-decoration: none;
-          transition: border-color 0.2s, color 0.2s;
-          display: inline-block;
-        }
-        .mf-btn-ghost:hover {
-          border-color: rgba(94,234,212,0.5);
-          color: #5EEAD4;
-        }
-        .mf-hero-stats {
-          display: flex;
-          gap: 48px;
-          margin-top: 72px;
-          padding-top: 40px;
-          border-top: 1px solid rgba(94,234,212,0.12);
-        }
-        .mf-stat-num {
-          font-family: 'Syne', sans-serif;
-          font-size: 32px;
-          font-weight: 800;
-          color: #5EEAD4;
-          display: block;
-        }
-        .mf-stat-label {
-          font-size: 13px;
-          color: rgba(226,244,241,0.5);
-          margin-top: 4px;
-        }
-
-        /* ── REVEAL ANIMATION ── */
-        [data-reveal] {
+        [data-animate] {
           opacity: 0;
           transform: translateY(20px);
           transition: opacity 0.6s ease, transform 0.6s ease;
         }
-        .mf-revealed {
-          opacity: 1 !important;
-          transform: none !important;
+        [data-animate].mf-in-view { opacity: 1; transform: none; }
+        [data-animate-delay="1"] { transition-delay: 0.1s; }
+        [data-animate-delay="2"] { transition-delay: 0.2s; }
+        [data-animate-delay="3"] { transition-delay: 0.3s; }
+        [data-animate-delay="4"] { transition-delay: 0.4s; }
+
+        /* ── NAV ── */
+        .mf-nav {
+          position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 0 52px; height: 68px;
+          background: rgba(10,46,42,0.97);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .mf-nav-logo {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+          color: #fff; text-decoration: none;
+        }
+        .mf-nav-logo .accent { color: #5EEAD4; }
+        .mf-nav-links { display: flex; align-items: center; gap: 36px; list-style: none; }
+        .mf-nav-links a {
+          color: rgba(255,255,255,0.55); text-decoration: none;
+          font-size: 14px; font-weight: 500; transition: color 0.2s;
+        }
+        .mf-nav-links a:hover { color: #fff; }
+
+        /* FIX 1: Nav CTA — solid teal fill, high contrast, impossible to miss */
+        .mf-nav-cta {
+          background: #5EEAD4;
+          color: #0A2E2A !important;
+          border: none;
+          padding: 9px 22px; border-radius: 8px;
+          font-size: 14px; font-weight: 700;
+          font-family: 'Outfit', sans-serif;
+          text-decoration: none; display: inline-block;
+          letter-spacing: 0.1px;
+          transition: background 0.2s, box-shadow 0.2s;
+          box-shadow: 0 0 0 3px rgba(94,234,212,0.25);
+        }
+        .mf-nav-cta:hover {
+          background: #99F6E4;
+          color: #0A2E2A !important;
+          box-shadow: 0 0 0 4px rgba(94,234,212,0.35);
         }
 
-        /* ── SECTION BASE ── */
-        .mf-section {
-          padding: 100px 48px;
+        /* ── HERO ── */
+        .mf-hero {
+          background: #0A2E2A;
+          min-height: 100vh;
+          display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          text-align: center; padding: 120px 48px 100px;
+          position: relative; overflow: hidden;
         }
-        .mf-section-label {
-          font-size: 11px;
-          font-weight: 500;
-          letter-spacing: 2px;
-          text-transform: uppercase;
-          color: #5EEAD4;
-          margin-bottom: 16px;
+        .mf-hero::before {
+          content: ''; position: absolute; inset: 0;
+          background:
+            radial-gradient(ellipse 70% 55% at 50% -5%, rgba(15,118,110,0.55) 0%, transparent 65%),
+            radial-gradient(ellipse 40% 35% at 15% 90%, rgba(94,234,212,0.06) 0%, transparent 55%);
+          pointer-events: none;
         }
-        .mf-section-h2 {
-          font-family: 'Syne', sans-serif;
-          font-size: clamp(36px, 4vw, 52px);
-          font-weight: 800;
-          line-height: 1.1;
-          letter-spacing: -1.5px;
-          color: #E2F4F1;
-          margin-bottom: 16px;
+        .mf-hero-grid {
+          position: absolute; inset: 0;
+          background-image:
+            linear-gradient(rgba(94,234,212,0.025) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(94,234,212,0.025) 1px, transparent 1px);
+          background-size: 72px 72px; pointer-events: none;
         }
-        .mf-section-sub {
-          font-size: 17px;
-          color: rgba(226,244,241,0.55);
-          line-height: 1.6;
-          max-width: 520px;
-          margin-bottom: 64px;
-        }
-        .mf-max {
-          max-width: 1160px;
-          margin: 0 auto;
-        }
+        .mf-hero-inner { position: relative; max-width: 800px; }
 
-        /* ── HOW IT WORKS ── */
-        .mf-steps {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 2px;
+        /* FIX 2: Eyebrow — removed orphaned dot, now uses a pill with inline indicator */
+        .mf-eyebrow {
+          display: inline-flex; align-items: center; gap: 10px;
           background: rgba(94,234,212,0.08);
-          border: 1px solid rgba(94,234,212,0.12);
-          border-radius: 16px;
-          overflow: hidden;
+          border: 1px solid rgba(94,234,212,0.18);
+          color: #5EEAD4; font-size: 11px; font-weight: 600;
+          letter-spacing: 2px; text-transform: uppercase;
+          padding: 7px 18px 7px 14px; border-radius: 100px; margin-bottom: 40px;
         }
+        .mf-eyebrow-pip {
+          width: 20px; height: 20px; border-radius: 50%;
+          background: rgba(94,234,212,0.15);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .mf-eyebrow-dot {
+          width: 6px; height: 6px; border-radius: 50%; background: #5EEAD4;
+          animation: mf-blink 2.5s ease-in-out infinite;
+        }
+        @keyframes mf-blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+        .mf-hero-h1 {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(52px, 7.5vw, 88px);
+          font-weight: 800; line-height: 1.0; letter-spacing: -2.5px;
+          color: #fff;
+        }
+        .mf-hero-h1 .line2 {
+          display: block; color: #5EEAD4;
+        }
+        .mf-hero-sub {
+          font-size: 18px; line-height: 1.7; font-weight: 400;
+          color: rgba(255,255,255,0.45);
+          max-width: 480px; margin: 30px auto 48px;
+        }
+        .mf-hero-actions {
+          display: flex; align-items: center; justify-content: center;
+          gap: 12px; flex-wrap: wrap;
+        }
+        .mf-btn-primary {
+          background: #5EEAD4; color: #0A2E2A;
+          border: none; padding: 14px 32px; border-radius: 8px;
+          font-size: 15px; font-weight: 700;
+          cursor: pointer; font-family: 'Outfit', sans-serif;
+          text-decoration: none; display: inline-block;
+          transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+        }
+        .mf-btn-primary:hover {
+          background: #99F6E4; transform: translateY(-1px);
+          box-shadow: 0 6px 24px rgba(94,234,212,0.25);
+        }
+        .mf-btn-ghost {
+          background: transparent; color: rgba(255,255,255,0.65);
+          border: 1px solid rgba(255,255,255,0.15);
+          padding: 13px 28px; border-radius: 8px;
+          font-size: 15px; font-weight: 500;
+          cursor: pointer; font-family: 'Outfit', sans-serif;
+          text-decoration: none; display: inline-block;
+          transition: border-color 0.2s, color 0.2s;
+        }
+        .mf-btn-ghost:hover { border-color: rgba(255,255,255,0.35); color: #fff; }
+
+        /* FIX 3: All stats white, accent only on the teal line */
+        .mf-hero-stats {
+          display: flex; justify-content: center; gap: 60px;
+          margin-top: 80px; padding-top: 44px;
+          border-top: 1px solid rgba(255,255,255,0.07);
+        }
+        .mf-stat-num {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 32px; font-weight: 800; letter-spacing: -1px;
+          color: #fff; display: block; line-height: 1;
+        }
+        .mf-stat-label {
+          font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 7px;
+          text-transform: uppercase; letter-spacing: 1px; font-weight: 500;
+        }
+
+        /* FIX 4: Trust bar — card-style chips instead of inline pipe-separated text */
+        .mf-trust {
+          background: #F0FDF9;
+          border-bottom: 1px solid #CCFBF1;
+          padding: 20px 52px;
+          display: flex; align-items: center; justify-content: center;
+          gap: 10px; flex-wrap: wrap;
+        }
+        .mf-trust-chip {
+          display: inline-flex; align-items: center; gap: 7px;
+          background: #fff;
+          border: 1px solid #A7F3D0;
+          color: #065F46;
+          font-size: 13px; font-weight: 500;
+          padding: 8px 16px; border-radius: 100px;
+          white-space: nowrap;
+        }
+        .mf-trust-chip-icon {
+          width: 18px; height: 18px; border-radius: 50%;
+          background: #D1FAF0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 10px; flex-shrink: 0; color: #065F46; font-weight: 700;
+        }
+
+        /* ── SHARED SECTION STYLES ── */
+        .mf-section-white { background: #fff; padding: 100px 52px; }
+        .mf-section-offwhite { background: #FAFAFA; padding: 100px 52px; }
+        .mf-modules-bg {
+          background: #F0FDF9; padding: 100px 52px;
+          border-top: 1px solid #CCFBF1; border-bottom: 1px solid #CCFBF1;
+        }
+        .mf-max { max-width: 1120px; margin: 0 auto; }
+
+        .mf-tag {
+          display: inline-block; font-size: 11px; font-weight: 700;
+          letter-spacing: 2px; text-transform: uppercase; color: #0F766E;
+          margin-bottom: 14px;
+        }
+        .mf-h2 {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(32px, 4vw, 46px); font-weight: 800;
+          line-height: 1.1; letter-spacing: -1.5px; color: #0A2E2A;
+          margin-bottom: 14px;
+        }
+        .mf-lead {
+          font-size: 16px; color: #6B7280; line-height: 1.7; max-width: 480px;
+        }
+
+        /* ── STEPS ── */
+        .mf-steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; margin-top: 52px; }
         .mf-step {
-          background: rgba(13,59,54,0.95);
-          padding: 48px 40px;
-          position: relative;
-          transition: background 0.2s;
+          background: #FAFFFE; border: 1px solid #D1FAF0;
+          border-radius: 14px; padding: 36px 32px;
+          transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .mf-step:hover { background: rgba(15,118,110,0.3); }
+        .mf-step:hover { border-color: #5EEAD4; box-shadow: 0 4px 20px rgba(94,234,212,0.12); }
+
+        /* FIX 5: Step numbers — darker, more readable */
         .mf-step-num {
-          font-family: 'Syne', sans-serif;
-          font-size: 64px;
-          font-weight: 800;
-          color: rgba(94,234,212,0.12);
-          line-height: 1;
-          margin-bottom: 32px;
-          display: block;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 48px; font-weight: 800;
+          color: #99F6E4;
+          line-height: 1; margin-bottom: 24px; letter-spacing: -2px;
         }
         .mf-step-title {
-          font-family: 'Syne', sans-serif;
-          font-size: 22px;
-          font-weight: 700;
-          color: #E2F4F1;
-          margin-bottom: 16px;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 18px; font-weight: 700; color: #0A2E2A; margin-bottom: 10px;
+          letter-spacing: -0.3px;
         }
-        .mf-step-body {
-          font-size: 15px;
-          color: rgba(226,244,241,0.55);
-          line-height: 1.65;
+        .mf-step-body { font-size: 14px; color: #6B7280; line-height: 1.7; }
+
+        /* ── BENTO ── */
+        .mf-bento { display: grid; grid-template-columns: repeat(12,1fr); gap: 14px; margin-top: 52px; }
+        .mf-bc {
+          background: #fff; border: 1px solid #E5E7EB;
+          border-radius: 14px; padding: 32px;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .mf-bc:hover { border-color: #A7F3D0; box-shadow: 0 4px 18px rgba(13,59,54,0.05); }
+        .mf-bc.s7 { grid-column: span 7; }
+        .mf-bc.s5 { grid-column: span 5; }
+        .mf-bc.s4 { grid-column: span 4; }
+        .mf-bc.dark { background: #0A2E2A; border-color: #0A2E2A; }
+        .mf-bc.dark:hover { border-color: #0F766E; }
+        .mf-bc-icon {
+          width: 44px; height: 44px; background: #F0FDF9;
+          border: 1px solid #CCFBF1; border-radius: 10px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 20px; margin-bottom: 20px;
+        }
+        .mf-bc.dark .mf-bc-icon { background: rgba(94,234,212,0.08); border-color: rgba(94,234,212,0.15); }
+        .mf-bc-title {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 18px; font-weight: 700; color: #0A2E2A;
+          margin-bottom: 8px; letter-spacing: -0.3px;
+        }
+        .mf-bc.dark .mf-bc-title { color: #5EEAD4; }
+        .mf-bc-body { font-size: 14px; color: #6B7280; line-height: 1.7; }
+        .mf-bc.dark .mf-bc-body { color: rgba(255,255,255,0.45); }
+        .mf-bc-big {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 44px; font-weight: 800; color: #5EEAD4;
+          line-height: 1; margin-top: 24px; letter-spacing: -2px;
+        }
+        .mf-bc-big-label {
+          font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 4px;
+          font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px;
         }
 
-        /* ── MODULES GRID ── */
-        .mf-modules-section {
-          padding: 100px 48px;
-          background: rgba(0,0,0,0.15);
+        /* ── MODULES ── */
+        .mf-mgrid {
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr));
+          gap: 10px; margin-top: 52px;
         }
-        .mf-modules-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-          gap: 12px;
+        .mf-mcard {
+          background: #fff; border: 1px solid #E5E7EB; border-radius: 12px;
+          padding: 20px 18px; text-decoration: none; display: block; position: relative;
+          transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
         }
-        .mf-module-card {
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 12px;
-          padding: 28px 24px;
-          cursor: pointer;
-          transition: background 0.2s, border-color 0.2s, transform 0.15s;
-          position: relative;
-          overflow: hidden;
-          text-decoration: none;
-          display: block;
+        .mf-mcard:hover { box-shadow: 0 4px 16px rgba(13,59,54,0.08); transform: translateY(-2px); }
+        .mf-mcard.live { border-color: #D1FAF0; }
+        .mf-mswatch { width: 28px; height: 28px; border-radius: 7px; margin-bottom: 14px; }
+        .mf-mname {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 2px; letter-spacing: -0.2px;
         }
-        .mf-module-card:hover {
-          background: rgba(255,255,255,0.08);
-          transform: translateY(-2px);
-        }
-        .mf-module-card.live {
-          border-color: rgba(255,255,255,0.15);
-        }
-        .mf-module-card.live:hover {
-          border-color: rgba(255,255,255,0.25);
-        }
-        .mf-module-swatch {
-          width: 36px;
-          height: 36px;
-          border-radius: 8px;
-          margin-bottom: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .mf-module-name {
-          font-family: 'Syne', sans-serif;
-          font-size: 17px;
-          font-weight: 700;
-          color: #E2F4F1;
-          margin-bottom: 4px;
-        }
-        .mf-module-tagline {
-          font-size: 12px;
-          color: rgba(226,244,241,0.45);
-        }
+        .mf-mtag { font-size: 11px; color: #9CA3AF; }
         .mf-live-badge {
-          position: absolute;
-          top: 14px;
-          right: 14px;
-          background: rgba(94,234,212,0.15);
-          border: 1px solid rgba(94,234,212,0.35);
-          color: #5EEAD4;
-          font-size: 10px;
-          font-weight: 600;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          padding: 3px 8px;
-          border-radius: 100px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
+          position: absolute; top: 11px; right: 11px;
+          background: #F0FDF9; border: 1px solid #A7F3D0; color: #0F766E;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+          padding: 2px 7px; border-radius: 100px; display: flex; align-items: center; gap: 4px;
         }
         .mf-live-dot {
-          width: 5px; height: 5px;
-          background: #5EEAD4;
-          border-radius: 50%;
-          animation: mf-pulse 2s ease-in-out infinite;
+          width: 4px; height: 4px; background: #10B981; border-radius: 50%;
+          animation: mf-blink 2.5s ease-in-out infinite;
         }
         .mf-soon-badge {
-          position: absolute;
-          top: 14px;
-          right: 14px;
-          background: rgba(255,255,255,0.06);
-          color: rgba(226,244,241,0.35);
-          font-size: 10px;
-          font-weight: 500;
-          letter-spacing: 0.5px;
-          padding: 3px 8px;
-          border-radius: 100px;
+          position: absolute; top: 11px; right: 11px; background: #F9FAFB;
+          color: #D1D5DB; font-size: 9px; font-weight: 500; padding: 2px 7px; border-radius: 100px;
         }
 
-        /* ── PLATFORM PITCH ── */
-        .mf-pitch-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 48px;
-          align-items: center;
+        /* ── CTA ── */
+        .mf-cta {
+          background: #0A2E2A; padding: 120px 52px; text-align: center;
+          position: relative; overflow: hidden;
         }
-        .mf-pitch-pills {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
+        .mf-cta::before {
+          content: ''; position: absolute; inset: 0;
+          background: radial-gradient(ellipse 55% 70% at 50% 110%, rgba(15,118,110,0.5) 0%, transparent 60%);
+          pointer-events: none;
         }
-        .mf-pitch-pill {
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(94,234,212,0.1);
-          border-radius: 12px;
-          padding: 24px 28px;
-          display: flex;
-          align-items: flex-start;
-          gap: 20px;
-        }
-        .mf-pitch-icon {
-          width: 40px;
-          height: 40px;
-          background: rgba(94,234,212,0.1);
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          font-size: 18px;
-        }
-        .mf-pitch-pill-title {
-          font-size: 15px;
-          font-weight: 600;
-          color: #E2F4F1;
-          margin-bottom: 6px;
-        }
-        .mf-pitch-pill-body {
-          font-size: 13px;
-          color: rgba(226,244,241,0.5);
-          line-height: 1.6;
-        }
-
-        /* ── CTA BAND ── */
-        .mf-cta-band {
-          margin: 0 48px 100px;
-          background: linear-gradient(135deg, #0F766E 0%, #0D3B36 100%);
-          border: 1px solid rgba(94,234,212,0.2);
-          border-radius: 20px;
-          padding: 80px 72px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 40px;
-          flex-wrap: wrap;
-        }
+        .mf-cta-inner { position: relative; max-width: 560px; margin: 0 auto; }
         .mf-cta-h2 {
-          font-family: 'Syne', sans-serif;
-          font-size: clamp(32px, 3.5vw, 44px);
-          font-weight: 800;
-          color: #E2F4F1;
-          letter-spacing: -1px;
-          line-height: 1.1;
-          margin-bottom: 12px;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(34px, 4.5vw, 52px); font-weight: 800;
+          color: #fff; letter-spacing: -1.5px; line-height: 1.08; margin-bottom: 18px;
         }
-        .mf-cta-sub {
-          font-size: 16px;
-          color: rgba(226,244,241,0.6);
-        }
+        .mf-cta-sub { font-size: 16px; color: rgba(255,255,255,0.45); margin-bottom: 40px; line-height: 1.65; }
+        .mf-cta-row { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
 
         /* ── FOOTER ── */
         .mf-footer {
-          border-top: 1px solid rgba(94,234,212,0.1);
-          padding: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 24px;
+          background: #061A18; padding: 40px 52px;
+          display: flex; align-items: center; justify-content: space-between;
+          flex-wrap: wrap; gap: 20px; border-top: 1px solid rgba(255,255,255,0.05);
         }
-        .mf-footer-logo {
-          font-family: 'Syne', sans-serif;
-          font-size: 18px;
-          font-weight: 800;
-          color: #5EEAD4;
-          text-decoration: none;
+        .mf-flogo {
+          font-family: 'Plus Jakarta Sans', sans-serif; font-size: 16px; font-weight: 800;
+          color: #fff; text-decoration: none; letter-spacing: -0.3px;
         }
-        .mf-footer-logo span { color: rgba(226,244,241,0.5); }
-        .mf-footer-links {
-          display: flex;
-          gap: 32px;
-          list-style: none;
-        }
-        .mf-footer-links a {
-          color: rgba(226,244,241,0.4);
-          text-decoration: none;
-          font-size: 13px;
-          transition: color 0.2s;
-        }
-        .mf-footer-links a:hover { color: #5EEAD4; }
-        .mf-footer-copy {
-          font-size: 13px;
-          color: rgba(226,244,241,0.25);
-        }
+        .mf-flogo .accent { color: #5EEAD4; }
+        .mf-flinks { display: flex; gap: 28px; list-style: none; }
+        .mf-flinks a { color: rgba(255,255,255,0.28); text-decoration: none; font-size: 13px; transition: color 0.2s; }
+        .mf-flinks a:hover { color: rgba(255,255,255,0.7); }
+        .mf-fcopy { font-size: 12px; color: rgba(255,255,255,0.18); }
 
-        @media (max-width: 768px) {
-          .mf-nav { padding: 16px 24px; }
-          .mf-nav-links { display: none; }
-          .mf-hero { padding: 100px 24px 60px; }
-          .mf-section { padding: 72px 24px; }
-          .mf-modules-section { padding: 72px 24px; }
+        /* ── RESPONSIVE ── */
+        @media (max-width: 900px) {
+          .mf-nav { padding: 0 24px; }
+          .mf-nav-links li:not(:last-child) { display: none; }
+          .mf-hero, .mf-section-white, .mf-section-offwhite,
+          .mf-modules-bg, .mf-cta { padding-left: 24px; padding-right: 24px; }
           .mf-steps { grid-template-columns: 1fr; }
-          .mf-pitch-grid { grid-template-columns: 1fr; }
-          .mf-cta-band { margin: 0 24px 72px; padding: 48px 32px; }
-          .mf-footer { padding: 32px 24px; flex-direction: column; align-items: flex-start; }
-          .mf-modules-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+          .mf-bc.s7, .mf-bc.s5, .mf-bc.s4 { grid-column: span 12; }
+          .mf-hero-stats { gap: 28px; }
+          .mf-trust { padding: 16px 24px; }
+          .mf-footer { padding: 28px 24px; flex-direction: column; align-items: flex-start; }
         }
       `}</style>
 
       <div className="mf-root">
+
         {/* NAV */}
         <nav className="mf-nav">
-          <a href="/" className="mf-nav-logo">Measure<span>Fit</span></a>
+          <a href="/" className="mf-nav-logo">
+            Measure<span className="accent">Fit</span>
+          </a>
           <ul className="mf-nav-links">
             <li><a href="#how-it-works">How it works</a></li>
-            <li><a href="#modules">Modules</a></li>
             <li><a href="#platform">Platform</a></li>
+            <li><a href="#modules">Modules</a></li>
             <li>
               <a href="/signup?vertical=windowfit" className="mf-nav-cta">
                 Get started
@@ -560,30 +414,34 @@ export default function MeasureFitHomePage() {
         </nav>
 
         {/* HERO */}
-        <section className="mf-hero" ref={heroRef}>
-          <div className="mf-hero-bg" />
-          <div className="mf-hero-grid-lines" />
-          <div className="mf-hero-content">
-            <div className="mf-hero-eyebrow" data-reveal>
-              <span className="mf-hero-eyebrow-dot" />
-              AR + LiDAR measurement platform
+        <section className="mf-hero">
+          <div className="mf-hero-grid" />
+          <div className="mf-hero-inner">
+            {/* FIX: Eyebrow pill now has a proper contained indicator, no orphaned dot */}
+            <div className="mf-eyebrow">
+              <span className="mf-eyebrow-pip">
+                <span className="mf-eyebrow-dot" />
+              </span>
+              AR + LiDAR Measurement Platform
             </div>
-            <h1 className="mf-hero-h1" data-reveal>
-              One platform.<br /><em>Every trade.</em>
+            <h1 className="mf-hero-h1">
+              One platform.
+              <span className="line2">Every trade.</span>
             </h1>
-            <p className="mf-hero-sub" data-reveal>
-              MeasureFit gives home improvement dealers the tools to measure precisely,
-              quote instantly, and close faster — no matter what they install.
+            <p className="mf-hero-sub">
+              MeasureFit gives home improvement dealers AR-powered measurement,
+              instant quoting, and built-in payments — all in one app.
             </p>
-            <div className="mf-hero-actions" data-reveal>
+            <div className="mf-hero-actions">
               <a href="/signup?vertical=windowfit" className="mf-btn-primary">
                 Start with WindowFit →
               </a>
-              <a href="#modules" className="mf-btn-ghost">
-                See all modules
+              <a href="#how-it-works" className="mf-btn-ghost">
+                See how it works
               </a>
             </div>
-            <div className="mf-hero-stats" data-reveal>
+            {/* FIX: All stat numbers are white — no teal on individual stats */}
+            <div className="mf-hero-stats">
               <div>
                 <span className="mf-stat-num">14</span>
                 <div className="mf-stat-label">Trade verticals</div>
@@ -593,26 +451,60 @@ export default function MeasureFitHomePage() {
                 <div className="mf-stat-label">Platform to learn</div>
               </div>
               <div>
-                <span className="mf-stat-num">AR</span>
-                <div className="mf-stat-label">Precision measurement</div>
+                <span className="mf-stat-num">±⅛″</span>
+                <div className="mf-stat-label">AR accuracy</div>
               </div>
             </div>
           </div>
         </section>
 
+        {/* TRUST BAR — chip style */}
+        <div className="mf-trust">
+          {[
+            'No tape measure needed',
+            'Quote before you leave',
+            'Stripe-powered payments',
+            'Works on any iPhone',
+            'All from your phone',
+          ].map((item) => (
+            <span className="mf-trust-chip" key={item}>
+              <span className="mf-trust-chip-icon">✓</span>
+              {item}
+            </span>
+          ))}
+        </div>
+
         {/* HOW IT WORKS */}
-        <section className="mf-section" id="how-it-works">
+        <section className="mf-section-white" id="how-it-works">
           <div className="mf-max">
-            <div className="mf-section-label">How it works</div>
-            <h2 className="mf-section-h2">From first visit to signed order</h2>
-            <p className="mf-section-sub">
-              Three steps. Your dealer walks away with perfect measurements and a quote.
-              Your customer walks away impressed.
-            </p>
+            <div data-animate>
+              <span className="mf-tag">How it works</span>
+              <h2 className="mf-h2">From front door<br />to signed order.</h2>
+              {/* FIX: Added "All from your phone." */}
+              <p className="mf-lead">Three steps. Perfect measurements. A quote sent before the visit is over. All from your phone.</p>
+            </div>
             <div className="mf-steps">
-              {steps.map((s) => (
-                <div className="mf-step" key={s.num}>
-                  <span className="mf-step-num">{s.num}</span>
+              {[
+                {
+                  num: '01',
+                  title: 'Scan the space',
+                  // FIX: "in seconds" instead of "under 60 seconds", "ready to close" at end
+                  body: 'Open the app and point your phone at the space. AR + LiDAR captures exact measurements in seconds — no tape measure, no callbacks, no disputes.',
+                },
+                {
+                  num: '02',
+                  title: 'Build the quote',
+                  body: 'Products, options, and pricing auto-fill from your catalog. A polished quote is assembled and sent to the customer before you leave their home.',
+                },
+                {
+                  num: '03',
+                  title: 'Collect & close',
+                  // FIX: Last 3 words changed to "ready to close"
+                  body: 'The customer reviews, signs, and pays a deposit online. Your dealer gets the confirmed order with every measurement attached — ready to close.',
+                },
+              ].map((s, i) => (
+                <div className="mf-step" key={s.num} data-animate data-animate-delay={String(i + 1)}>
+                  <div className="mf-step-num">{s.num}</div>
                   <div className="mf-step-title">{s.title}</div>
                   <p className="mf-step-body">{s.body}</p>
                 </div>
@@ -621,148 +513,104 @@ export default function MeasureFitHomePage() {
           </div>
         </section>
 
-        {/* MODULES GRID */}
-        <section className="mf-modules-section" id="modules">
+        {/* PLATFORM BENTO */}
+        <section className="mf-section-offwhite" id="platform">
           <div className="mf-max">
-            <div className="mf-section-label">Modules</div>
-            <h2 className="mf-section-h2">Built for every trade</h2>
-            <p className="mf-section-sub">
-              One login. One workflow. The module your dealer uses determines what they see —
-              right product catalog, right terminology, right pricing.
-            </p>
-            <div className="mf-modules-grid">
-              {modules.map((mod) => (
+            <div data-animate>
+              <span className="mf-tag">The platform</span>
+              <h2 className="mf-h2">Everything a dealer needs.<br />Nothing they don't.</h2>
+              <p className="mf-lead">One codebase. One backend. One login. The module determines what your dealer sees.</p>
+            </div>
+            <div className="mf-bento">
+              <div className="mf-bc dark s7" data-animate data-animate-delay="1">
+                <div className="mf-bc-icon">📐</div>
+                <div className="mf-bc-title">AR precision measurement</div>
+                <p className="mf-bc-body">LiDAR-powered capture on iPhone. Measurements stored with the job permanently — no re-measuring, no disputes with customers.</p>
+                <div className="mf-bc-big">±⅛″</div>
+                <div className="mf-bc-big-label">Measurement accuracy</div>
+              </div>
+              <div className="mf-bc s5" data-animate data-animate-delay="2">
+                <div className="mf-bc-icon">💬</div>
+                <div className="mf-bc-title">Instant branded quotes</div>
+                <p className="mf-bc-body">Products and pricing auto-fill from your catalog. A polished quote is emailed to the customer before you're back in your truck.</p>
+              </div>
+              <div className="mf-bc s4" data-animate data-animate-delay="1">
+                <div className="mf-bc-icon">💳</div>
+                <div className="mf-bc-title">Built-in payments</div>
+                <p className="mf-bc-body">Stripe-powered deposits and final payments. No separate invoicing tool, no chasing checks.</p>
+              </div>
+              <div className="mf-bc s4" data-animate data-animate-delay="2">
+                <div className="mf-bc-icon">🏷️</div>
+                <div className="mf-bc-title">Multi-vertical modules</div>
+                <p className="mf-bc-body">Assign a dealer to WindowFit, FloorFit, or any vertical. The right catalog loads automatically on login.</p>
+              </div>
+              <div className="mf-bc s4" data-animate data-animate-delay="3">
+                <div className="mf-bc-icon">📦</div>
+                <div className="mf-bc-title">Product catalog</div>
+                <p className="mf-bc-body">62+ products seeded for WindowFit. Brands, colors, fabrics, and options — configured out of the box.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* MODULES */}
+        <section className="mf-modules-bg" id="modules">
+          <div className="mf-max">
+            <div data-animate>
+              <span className="mf-tag">Modules</span>
+              <h2 className="mf-h2">Built for every trade.</h2>
+              <p className="mf-lead">WindowFit is live now. More verticals coming — same platform, same workflow, new catalog.</p>
+            </div>
+            <div className="mf-mgrid">
+              {modules.map((mod, i) => (
                 <a
                   key={mod.name}
-                  href={
-                    mod.live
-                      ? `/signup?vertical=${mod.name.toLowerCase()}`
-                      : '#modules'
-                  }
-                  className={`mf-module-card${mod.live ? ' live' : ''}`}
-                  style={
-                    mod.live
-                      ? { borderColor: `${mod.color}40` }
-                      : {}
-                  }
+                  href={mod.live ? `/signup?vertical=${mod.name.toLowerCase()}` : '#modules'}
+                  className={`mf-mcard${mod.live ? ' live' : ''}`}
+                  data-animate
+                  data-animate-delay={String((i % 4) + 1)}
+                  style={mod.live ? { borderColor: `${mod.color}35` } : {}}
                 >
-                  <div
-                    className="mf-module-swatch"
-                    style={{ background: `${mod.color}20`, border: `1px solid ${mod.color}40` }}
-                  >
-                    <div
-                      style={{
-                        width: 14,
-                        height: 14,
-                        borderRadius: 3,
-                        background: mod.color,
-                        opacity: 0.9,
-                      }}
-                    />
-                  </div>
-                  <div className="mf-module-name">{mod.name}</div>
-                  <div className="mf-module-tagline">{mod.tagline}</div>
-                  {mod.live ? (
-                    <span className="mf-live-badge">
-                      <span className="mf-live-dot" />
-                      Live
-                    </span>
-                  ) : (
-                    <span className="mf-soon-badge">Soon</span>
-                  )}
+                  <div className="mf-mswatch" style={{ background: mod.color }} />
+                  <div className="mf-mname">{mod.name}</div>
+                  <div className="mf-mtag">{mod.tagline}</div>
+                  {mod.live
+                    ? <span className="mf-live-badge"><span className="mf-live-dot" />Live</span>
+                    : <span className="mf-soon-badge">Soon</span>
+                  }
                 </a>
               ))}
             </div>
           </div>
         </section>
 
-        {/* PLATFORM PITCH */}
-        <section className="mf-section" id="platform">
-          <div className="mf-max">
-            <div className="mf-pitch-grid">
-              <div>
-                <div className="mf-section-label">The platform</div>
-                <h2 className="mf-section-h2">One codebase.<br />Every vertical.</h2>
-                <p className="mf-section-sub" style={{ marginBottom: 0 }}>
-                  MeasureFit isn't a collection of apps. It's a single platform
-                  that adapts — same measurements, quotes, and payments engine
-                  underneath every module.
-                </p>
-              </div>
-              <div className="mf-pitch-pills">
-                {[
-                  {
-                    icon: '📐',
-                    title: 'AR precision measurement',
-                    body: 'LiDAR-powered capture on iPhone. Measurements stored with the job, forever.',
-                  },
-                  {
-                    icon: '💬',
-                    title: 'Instant branded quotes',
-                    body: 'Products, options, and pricing auto-fill. Sent to the customer before you leave.',
-                  },
-                  {
-                    icon: '💳',
-                    title: 'Built-in payments',
-                    body: 'Stripe-powered deposits and final payments. No separate invoice tool needed.',
-                  },
-                  {
-                    icon: '🏷️',
-                    title: 'Your brand, your module',
-                    body: 'Each vertical loads its own catalog, color, and terminology automatically.',
-                  },
-                ].map((p) => (
-                  <div className="mf-pitch-pill" key={p.title}>
-                    <div className="mf-pitch-icon">{p.icon}</div>
-                    <div>
-                      <div className="mf-pitch-pill-title">{p.title}</div>
-                      <div className="mf-pitch-pill-body">{p.body}</div>
-                    </div>
-                  </div>
-                ))}
+        {/* CTA */}
+        <section className="mf-cta">
+          <div className="mf-cta-inner">
+            <div data-animate>
+              <h2 className="mf-cta-h2">Ready to measure smarter?</h2>
+              <p className="mf-cta-sub">WindowFit is live and taking dealers today. Start your free trial — no credit card required.</p>
+              <div className="mf-cta-row">
+                <a href="/signup?vertical=windowfit" className="mf-btn-primary">Get started free →</a>
+                <a href="mailto:hello@windowfit.io" className="mf-btn-ghost">Talk to us</a>
               </div>
             </div>
           </div>
         </section>
 
-        {/* CTA BAND */}
-        <div className="mf-cta-band">
-          <div>
-            <h2 className="mf-cta-h2">Ready to measure smarter?</h2>
-            <p className="mf-cta-sub">
-              WindowFit is live now. Start your free trial today.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <a href="/signup?vertical=windowfit" className="mf-btn-primary">
-              Get started free →
-            </a>
-            <a
-              href="mailto:hello@windowfit.io"
-              className="mf-btn-ghost"
-              style={{ borderColor: 'rgba(94,234,212,0.3)', color: 'rgba(226,244,241,0.8)' }}
-            >
-              Talk to us
-            </a>
-          </div>
-        </div>
-
         {/* FOOTER */}
         <footer className="mf-footer">
-          <a href="/" className="mf-footer-logo">
-            Measure<span>Fit</span>
-          </a>
-          <ul className="mf-footer-links">
+          <a href="/" className="mf-flogo">Measure<span className="accent">Fit</span></a>
+          <ul className="mf-flinks">
             <li><a href="https://windowfit.io">WindowFit</a></li>
             <li><a href="/signup">Sign up</a></li>
             <li><a href="mailto:hello@windowfit.io">Contact</a></li>
             <li><a href="/privacy">Privacy</a></li>
             <li><a href="/terms">Terms</a></li>
           </ul>
-          <span className="mf-footer-copy">
-            © {new Date().getFullYear()} WindowFit, Inc. All rights reserved.
-          </span>
+          <span className="mf-fcopy">© {new Date().getFullYear()} WindowFit, Inc.</span>
         </footer>
+
       </div>
     </>
   );
