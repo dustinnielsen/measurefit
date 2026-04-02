@@ -4,6 +4,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
 const Stripe = require('stripe');
+const PDFDocument = require('pdfkit');
 
 const app = express();
 
@@ -439,6 +440,213 @@ app.post('/send-trial-reminder', async (req, res) => {
     res.json({ success: true, emailId: emailData.id });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── QUOTE PDF EXPORT ─────────────────────────────────────────────────────────
+app.post('/api/quotes/:id/pdf', async (req, res) => {
+  const { id: quoteId } = req.params;
+  const { dealerId, subtotalCents, installCents, totalCents, lineItems: clientLineItems } = req.body;
+
+  try {
+    // Fetch quote with customer and dealer
+    const { data: quote, error: quoteError } = await supabaseAdmin
+      .from('quotes')
+      .select('*, customer:customers(*), dealer:dealers(*)')
+      .eq('id', quoteId)
+      .single();
+
+    if (quoteError || !quote) return res.status(404).json({ error: 'Quote not found' });
+
+    // Verify this quote belongs to the requesting dealer
+    if (quote.dealer_id !== dealerId) return res.status(403).json({ error: 'Forbidden' });
+
+    const dealer   = quote.dealer;
+    const customer = quote.customer;
+
+    // Resolve brand color to RGB for pdfkit
+    const rawColor = dealer.brand_color ?? '#2563EB';
+    const hexColor = rawColor.replace('#', '');
+    const r = parseInt(hexColor.slice(0, 2), 16);
+    const g = parseInt(hexColor.slice(2, 4), 16);
+    const b = parseInt(hexColor.slice(4, 6), 16);
+
+    // Use client-computed totals (include live markup adjustments not stored in DB)
+    const subtotal = subtotalCents ?? 0;
+    const install  = installCents  ?? 0;
+    const total    = totalCents    ?? 0;
+    const items    = clientLineItems ?? [];
+
+    // ── Build PDF ───────────────────────────────────────────────────────────
+    const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${quote.quote_number ?? 'quote'}.pdf"`);
+    doc.pipe(res);
+
+    const PAGE_W = doc.page.width;
+    const MARGIN = 50;
+    const COL_R  = PAGE_W - MARGIN;
+    const COL_MID = PAGE_W / 2;
+
+    // ── Header band ─────────────────────────────────────────────────────────
+    doc.rect(0, 0, PAGE_W, 80).fill([r, g, b]);
+
+    const dealerName = dealer.app_name ?? dealer.name ?? 'Your Dealer';
+
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(22)
+      .text(dealerName, MARGIN, 24);
+    doc.fillColor('white').font('Helvetica').fontSize(10)
+      .text('Window Covering Quote', MARGIN, 50);
+
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(11)
+      .text(quote.quote_number ?? '', MARGIN, 24, { width: PAGE_W - MARGIN * 2, align: 'right' });
+    doc.fillColor('white').font('Helvetica').fontSize(9)
+      .text(dateStr, MARGIN, 42, { width: PAGE_W - MARGIN * 2, align: 'right' });
+
+    // ── Prepared for / From ──────────────────────────────────────────────────
+    let y = 104;
+
+    doc.fillColor('#6B7280').font('Helvetica').fontSize(8)
+      .text('PREPARED FOR', MARGIN, y);
+    doc.fillColor('#6B7280').font('Helvetica').fontSize(8)
+      .text('FROM', COL_MID, y);
+
+    y += 14;
+
+    const customerName = customer
+      ? `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim()
+      : 'Customer';
+
+    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(12)
+      .text(customerName, MARGIN, y);
+    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(12)
+      .text(dealerName, COL_MID, y);
+
+    y += 16;
+
+    if (customer?.email) {
+      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(customer.email, MARGIN, y);
+      y += 13;
+    }
+    if (customer?.phone) {
+      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(customer.phone, MARGIN, y);
+      y += 13;
+    }
+    if (customer?.address_line1) {
+      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(customer.address_line1, MARGIN, y);
+      y += 13;
+    }
+    if (dealer.email) {
+      doc.fillColor('#6B7280').font('Helvetica').fontSize(9)
+        .text(dealer.email, COL_MID, 134);
+    }
+
+    // ── Section divider ──────────────────────────────────────────────────────
+    y = Math.max(y, 160) + 16;
+    doc.moveTo(MARGIN, y).lineTo(COL_R, y).strokeColor('#E5E7EB').lineWidth(1).stroke();
+    y += 16;
+
+    // ── Line items table header ──────────────────────────────────────────────
+    doc.rect(MARGIN, y, COL_R - MARGIN, 24).fill('#F9FAFB');
+
+    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
+      .text('PRODUCT / DESCRIPTION', MARGIN + 8, y + 8);
+    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
+      .text('SIZE', PAGE_W - 260, y + 8, { width: 80, align: 'right' });
+    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
+      .text('MARKUP', PAGE_W - 175, y + 8, { width: 60, align: 'right' });
+    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
+      .text('PRICE', PAGE_W - 110, y + 8, { width: 60, align: 'right' });
+
+    y += 28;
+
+    // ── Line item rows ───────────────────────────────────────────────────────
+    items.forEach((item, idx) => {
+      if (idx % 2 === 1) {
+        doc.rect(MARGIN, y - 4, COL_R - MARGIN, 36).fill('#FAFAFA');
+      }
+
+      const productName = (item.product_name ?? item.description ?? 'Window Covering')
+        .split('—').pop()?.trim() ?? 'Window Covering';
+      const size       = (item.width_in && item.height_in) ? `${item.width_in}" × ${item.height_in}"` : '';
+      const markupStr  = item.markupPercent != null ? `${item.markupPercent}%` : '';
+      const priceStr   = item.quotePriceCents != null ? `$${(item.quotePriceCents / 100).toFixed(0)}` : '—';
+
+      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(10)
+        .text(productName, MARGIN + 8, y, { width: PAGE_W - 320 });
+
+      if (size) {
+        doc.fillColor('#6B7280').font('Helvetica').fontSize(9)
+          .text(size, PAGE_W - 260, y, { width: 80, align: 'right' });
+      }
+
+      doc.fillColor('#6B7280').font('Helvetica').fontSize(9)
+        .text(markupStr, PAGE_W - 175, y, { width: 60, align: 'right' });
+
+      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(10)
+        .text(priceStr, PAGE_W - 110, y, { width: 60, align: 'right' });
+
+      y += 36;
+    });
+
+    // ── Totals ───────────────────────────────────────────────────────────────
+    y += 8;
+    doc.moveTo(MARGIN, y).lineTo(COL_R, y).strokeColor('#E5E7EB').lineWidth(1).stroke();
+    y += 16;
+
+    const totalsX = PAGE_W - 240;
+
+    const drawRow = (label, cents, bold = false, color = '#6B7280') => {
+      const val = `$${(cents / 100).toFixed(0)}`;
+      doc.fillColor(bold ? '#111827' : color)
+        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(bold ? 12 : 10)
+        .text(label, totalsX, y, { width: 130 });
+      doc.fillColor(bold ? rawColor : color)
+        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(bold ? 12 : 10)
+        .text(val, totalsX + 130, y, { width: 60, align: 'right' });
+      y += bold ? 22 : 18;
+    };
+
+    drawRow('Subtotal', subtotal);
+    drawRow('Installation', install);
+
+    y += 4;
+    doc.moveTo(totalsX, y).lineTo(COL_R, y).strokeColor('#E5E7EB').lineWidth(0.5).stroke();
+    y += 10;
+
+    drawRow('Total', total, true);
+
+    // ── Accuracy note ────────────────────────────────────────────────────────
+    y += 24;
+    doc.rect(MARGIN, y, COL_R - MARGIN, 36).fill('#EFF6FF');
+    doc.fillColor('#1D4ED8').font('Helvetica').fontSize(8)
+      .text(
+        'Measurements captured via WindowFit AR scanner (±0.25" accuracy). ' +
+        'Confirm final order dimensions with a tape measure before placing the order.',
+        MARGIN + 10, y + 10, { width: COL_R - MARGIN - 20 }
+      );
+
+    y += 52;
+
+    // ── Footer ───────────────────────────────────────────────────────────────
+    doc.fillColor('#9CA3AF').font('Helvetica').fontSize(8)
+      .text(
+        `${dealerName}  ·  Generated by WindowFit  ·  ${dateStr}`,
+        MARGIN, y, { width: COL_R - MARGIN, align: 'center' }
+      );
+
+    doc.end();
+    console.log(`[OK] PDF generated for quote ${quoteId}`);
+
+  } catch (e) {
+    console.error('PDF generation error:', e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: e.message });
+    }
   }
 });
 
