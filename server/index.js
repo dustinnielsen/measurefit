@@ -549,7 +549,7 @@ app.post('/api/quotes/:id/pdf', async (req, res) => {
     const DIVIDER = '#E5E7EB';
 
     // ── Header bar ──────────────────────────────────────────────────────────
-    doc.rect(0, 0, doc.page.width, 80).fill(`rgb(${br},${bg},${bb})`);
+    doc.rect(0, 0, doc.page.width, 80).fill(brandColor);
 
     doc.fillColor('white')
        .font('Helvetica-Bold')
