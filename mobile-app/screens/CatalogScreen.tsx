@@ -73,6 +73,7 @@ export default function CatalogScreen({ navigation }: any) {
   const loadCatalog = async () => {
     try {
       const data = await productsService.getDealerCatalog(dealer!.id);
+      
       setProducts(data.filter((p: any) => p.is_visible));
     } catch (e) {
       console.error('Catalog load error:', e);
@@ -205,7 +206,10 @@ export default function CatalogScreen({ navigation }: any) {
                 <TouchableOpacity
                   key={cat}
                   style={[styles.catChip, activeCategory === cat && { backgroundColor: brandColor }]}
-                  onPress={() => setActiveCategory(cat)}
+                  onPress={() => {
+  setActiveCategory(cat);
+  setActiveFabric('All Fabrics');
+}}
                 >
                   <Text style={[styles.catChipText, activeCategory === cat && styles.catChipTextActive]}>
                     {cat}
