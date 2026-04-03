@@ -1,3 +1,4 @@
+// MeasureFit Admin Dashboard v2
 import { useEffect, useState } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://windowfit-production.up.railway.app';

@@ -446,209 +446,306 @@ app.post('/send-trial-reminder', async (req, res) => {
 // ─── QUOTE PDF EXPORT ─────────────────────────────────────────────────────────
 app.post('/api/quotes/:id/pdf', async (req, res) => {
   const { id: quoteId } = req.params;
-  const { dealerId, subtotalCents, installCents, totalCents, lineItems: clientLineItems } = req.body;
+  const {
+    dealerId,
+    subtotalCents,
+    installCents,
+    totalCents,
+    showMeasurements = false,
+    showMarkup = false,
+    lineItems: clientLineItems,
+  } = req.body;
 
   try {
-    // Fetch quote with customer and dealer
     const { data: quote, error: quoteError } = await supabaseAdmin
       .from('quotes')
-      .select('*, customer:customers(*), dealer:dealers(*)')
+      .select(`
+        id, quote_number, status, created_at, notes,
+        customer:customers(first_name, last_name, email, phone, address_line1, city, state, zip),
+        dealer:dealers(id, name, owner_name, email),
+        line_items:quote_line_items(*)
+      `)
       .eq('id', quoteId)
       .single();
 
-    if (quoteError || !quote) return res.status(404).json({ error: 'Quote not found' });
+    if (quoteError || !quote) {
+      return res.status(404).json({ error: 'Quote not found' });
+    }
 
-    // Verify this quote belongs to the requesting dealer
-    if (quote.dealer_id !== dealerId) return res.status(403).json({ error: 'Forbidden' });
+    const { data: tenantData } = await supabaseAdmin
+      .from('dealers')
+      .select(`
+        subscription_tier,
+        vertical_brands(primary_color, brand_name, product_noun_plural)
+      `)
+      .eq('id', quote.dealer.id)
+      .single();
 
-    const dealer   = quote.dealer;
-    const customer = quote.customer;
+    const tier = tenantData?.subscription_tier ?? 'basic';
+    if (tier === 'basic') {
+      return res.status(403).json({ error: 'PDF export requires a Pro or Enterprise plan.' });
+    }
 
-    // Resolve brand color to RGB for pdfkit
-    const rawColor = dealer.brand_color ?? '#2563EB';
-    const hexColor = rawColor.replace('#', '');
-    const r = parseInt(hexColor.slice(0, 2), 16);
-    const g = parseInt(hexColor.slice(2, 4), 16);
-    const b = parseInt(hexColor.slice(4, 6), 16);
+    const brandColor    = tenantData?.vertical_brands?.primary_color ?? '#2563EB';
+    const brandName     = tenantData?.vertical_brands?.brand_name ?? quote.dealer.name;
+    const productNounPl = tenantData?.vertical_brands?.product_noun_plural ?? 'windows';
 
-    // Use client-computed totals (include live markup adjustments not stored in DB)
-    const subtotal = subtotalCents ?? 0;
+    const mergedItems = (clientLineItems ?? quote.line_items).map((item) => ({
+      description:   item.product_name ?? item.description ?? 'Item',
+      dimensions:    item.width_in && item.height_in ? `${item.width_in}" x ${item.height_in}"` : null,
+      priceCents:    item.quotePriceCents ?? item.unit_price_cents ?? 0,
+      markupPercent: item.markupPercent ?? null,
+      quantity:      item.quantity ?? 1,
+    }));
+
+    const subtotal = subtotalCents ?? mergedItems.reduce((s, i) => s + i.priceCents * i.quantity, 0);
     const install  = installCents  ?? 0;
-    const total    = totalCents    ?? 0;
-    const items    = clientLineItems ?? [];
+    const total    = totalCents    ?? subtotal + install;
 
-    // ── Build PDF ───────────────────────────────────────────────────────────
-    const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+    const customerName = quote.customer
+      ? `${quote.customer.first_name} ${quote.customer.last_name}`.trim()
+      : 'Customer';
+
+    const customerAddress = [
+      quote.customer?.address_line1,
+      quote.customer?.city,
+      quote.customer?.state,
+      quote.customer?.zip,
+    ].filter(Boolean).join(', ');
+
+    const quoteDate = new Date(quote.created_at).toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    const hexToRgb = (hex) => {
+      const h = hex.replace('#', '');
+      return [
+        parseInt(h.substring(0, 2), 16),
+        parseInt(h.substring(2, 4), 16),
+        parseInt(h.substring(4, 6), 16),
+      ];
+    };
+    const [br, bg, bb] = hexToRgb(brandColor);
+
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margins: { top: 48, bottom: 48, left: 56, right: 56 },
+      info: {
+        Title: `Quote ${quote.quote_number}`,
+        Author: brandName,
+        Subject: `Window covering quote for ${customerName}`,
+      },
+    });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${quote.quote_number ?? 'quote'}.pdf"`);
     doc.pipe(res);
 
-    const PAGE_W = doc.page.width;
-    const MARGIN = 50;
-    const COL_R  = PAGE_W - MARGIN;
-    const COL_MID = PAGE_W / 2;
+    const PAGE_W  = doc.page.width  - doc.page.margins.left - doc.page.margins.right;
+    const L       = doc.page.margins.left;
+    const GRAY    = '#6B7280';
+    const DARK    = '#111827';
+    const LIGHT   = '#F9FAFB';
+    const DIVIDER = '#E5E7EB';
 
-    // ── Header band ─────────────────────────────────────────────────────────
-    doc.rect(0, 0, PAGE_W, 80).fill([r, g, b]);
+    // ── Header bar ──────────────────────────────────────────────────────────
+    doc.rect(0, 0, doc.page.width, 80).fill(`rgb(${br},${bg},${bb})`);
 
-    const dealerName = dealer.app_name ?? dealer.name ?? 'Your Dealer';
+    doc.fillColor('white')
+       .font('Helvetica-Bold')
+       .fontSize(20)
+       .text(brandName, L, 22);
 
-    doc.fillColor('white').font('Helvetica-Bold').fontSize(22)
-      .text(dealerName, MARGIN, 24);
-    doc.fillColor('white').font('Helvetica').fontSize(10)
-      .text('Window Covering Quote', MARGIN, 50);
+    doc.font('Helvetica')
+       .fontSize(10)
+       .fillColor('rgba(255,255,255,0.85)')
+       .text('Window Covering Quote', L, 48);
 
-    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    doc.fillColor('white').font('Helvetica-Bold').fontSize(11)
-      .text(quote.quote_number ?? '', MARGIN, 24, { width: PAGE_W - MARGIN * 2, align: 'right' });
-    doc.fillColor('white').font('Helvetica').fontSize(9)
-      .text(dateStr, MARGIN, 42, { width: PAGE_W - MARGIN * 2, align: 'right' });
+    doc.font('Helvetica-Bold')
+       .fontSize(11)
+       .fillColor('white')
+       .text(quote.quote_number ?? '', L, 22, { align: 'right', width: PAGE_W });
 
-    // ── Prepared for / From ──────────────────────────────────────────────────
+    doc.font('Helvetica')
+       .fontSize(9)
+       .fillColor('rgba(255,255,255,0.85)')
+       .text(quoteDate, L, 38, { align: 'right', width: PAGE_W });
+
+    // ── Customer + Dealer info block ────────────────────────────────────────
     let y = 104;
 
-    doc.fillColor('#6B7280').font('Helvetica').fontSize(8)
-      .text('PREPARED FOR', MARGIN, y);
-    doc.fillColor('#6B7280').font('Helvetica').fontSize(8)
-      .text('FROM', COL_MID, y);
-
-    y += 14;
-
-    const customerName = customer
-      ? `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim()
-      : 'Customer';
-
-    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(12)
-      .text(customerName, MARGIN, y);
-    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(12)
-      .text(dealerName, COL_MID, y);
-
-    y += 16;
-
-    if (customer?.email) {
-      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(customer.email, MARGIN, y);
-      y += 13;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(GRAY).text('BILL TO', L, y);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK).text(customerName, L, y + 14);
+    if (customerAddress) {
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY).text(customerAddress, L, y + 30);
     }
-    if (customer?.phone) {
-      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(customer.phone, MARGIN, y);
-      y += 13;
-    }
-    if (customer?.address_line1) {
-      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(customer.address_line1, MARGIN, y);
-      y += 13;
-    }
-    if (dealer.email) {
-      doc.fillColor('#6B7280').font('Helvetica').fontSize(9)
-        .text(dealer.email, COL_MID, 134);
+    if (quote.customer?.email) {
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+         .text(quote.customer.email, L, customerAddress ? y + 44 : y + 30);
     }
 
-    // ── Section divider ──────────────────────────────────────────────────────
-    y = Math.max(y, 160) + 16;
-    doc.moveTo(MARGIN, y).lineTo(COL_R, y).strokeColor('#E5E7EB').lineWidth(1).stroke();
-    y += 16;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(GRAY)
+       .text('FROM', L, y, { align: 'right', width: PAGE_W });
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK)
+       .text(brandName, L, y + 14, { align: 'right', width: PAGE_W });
+    if (quote.dealer.owner_name) {
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+         .text(quote.dealer.owner_name, L, y + 30, { align: 'right', width: PAGE_W });
+    }
+    if (quote.dealer.email) {
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+         .text(quote.dealer.email, L, quote.dealer.owner_name ? y + 44 : y + 30, { align: 'right', width: PAGE_W });
+    }
 
-    // ── Line items table header ──────────────────────────────────────────────
-    doc.rect(MARGIN, y, COL_R - MARGIN, 24).fill('#F9FAFB');
+    // ── Divider ─────────────────────────────────────────────────────────────
+    y = 178;
+    doc.moveTo(L, y).lineTo(L + PAGE_W, y).lineWidth(0.5).strokeColor(DIVIDER).stroke();
 
-    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
-      .text('PRODUCT / DESCRIPTION', MARGIN + 8, y + 8);
-    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
-      .text('SIZE', PAGE_W - 260, y + 8, { width: 80, align: 'right' });
-    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
-      .text('MARKUP', PAGE_W - 175, y + 8, { width: 60, align: 'right' });
-    doc.fillColor('#6B7280').font('Helvetica-Bold').fontSize(8)
-      .text('PRICE', PAGE_W - 110, y + 8, { width: 60, align: 'right' });
+    // ── Line items table ─────────────────────────────────────────────────────
+    y = 194;
 
-    y += 28;
+    // Column layout varies based on which optional columns are shown
+    // Base: description + price always shown
+    // Optional: dimensions (showMeasurements), markup % (showMarkup)
+    let COL;
+    if (showMeasurements && showMarkup) {
+      COL = {
+        desc:   { x: L + 10,            w: PAGE_W * 0.40 },
+        dims:   { x: L + PAGE_W * 0.42, w: PAGE_W * 0.16 },
+        markup: { x: L + PAGE_W * 0.60, w: PAGE_W * 0.12 },
+        qty:    { x: L + PAGE_W * 0.74, w: PAGE_W * 0.08 },
+        price:  { x: L + PAGE_W * 0.84, w: PAGE_W * 0.16 },
+      };
+    } else if (showMeasurements) {
+      COL = {
+        desc:   { x: L + 10,            w: PAGE_W * 0.50 },
+        dims:   { x: L + PAGE_W * 0.52, w: PAGE_W * 0.18 },
+        markup: null,
+        qty:    { x: L + PAGE_W * 0.72, w: PAGE_W * 0.10 },
+        price:  { x: L + PAGE_W * 0.84, w: PAGE_W * 0.16 },
+      };
+    } else if (showMarkup) {
+      COL = {
+        desc:   { x: L + 10,            w: PAGE_W * 0.58 },
+        dims:   null,
+        markup: { x: L + PAGE_W * 0.60, w: PAGE_W * 0.12 },
+        qty:    { x: L + PAGE_W * 0.74, w: PAGE_W * 0.10 },
+        price:  { x: L + PAGE_W * 0.86, w: PAGE_W * 0.14 },
+      };
+    } else {
+      COL = {
+        desc:   { x: L + 10,            w: PAGE_W * 0.68 },
+        dims:   null,
+        markup: null,
+        qty:    { x: L + PAGE_W * 0.70, w: PAGE_W * 0.12 },
+        price:  { x: L + PAGE_W * 0.84, w: PAGE_W * 0.16 },
+      };
+    }
 
-    // ── Line item rows ───────────────────────────────────────────────────────
-    items.forEach((item, idx) => {
-      if (idx % 2 === 1) {
-        doc.rect(MARGIN, y - 4, COL_R - MARGIN, 36).fill('#FAFAFA');
+    // Table header
+    doc.rect(L, y, PAGE_W, 24).fill(LIGHT);
+    const headerY = y + 8;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(GRAY);
+    doc.text(productNounPl.toUpperCase(), COL.desc.x, headerY);
+    if (COL.dims)   doc.text('DIMENSIONS', COL.dims.x, headerY);
+    if (COL.markup) doc.text('MARKUP', COL.markup.x, headerY);
+    doc.text('QTY',   COL.qty.x,   headerY);
+    doc.text('PRICE', COL.price.x, headerY, { align: 'right', width: COL.price.w });
+
+    y += 24;
+
+    // Table rows
+    mergedItems.forEach((item, idx) => {
+      const rowH = 36;
+      if (idx % 2 === 1) doc.rect(L, y, PAGE_W, rowH).fill('#FAFAFA');
+
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK)
+         .text(item.description, COL.desc.x, y + 10, { width: COL.desc.w - 10 });
+
+      if (COL.dims) {
+        doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+           .text(item.dimensions ?? '—', COL.dims.x, y + 12);
       }
 
-      const productName = (item.product_name ?? item.description ?? 'Window Covering')
-        .split('—').pop()?.trim() ?? 'Window Covering';
-      const size       = (item.width_in && item.height_in) ? `${item.width_in}" × ${item.height_in}"` : '';
-      const markupStr  = item.markupPercent != null ? `${item.markupPercent}%` : '';
-      const priceStr   = item.quotePriceCents != null ? `$${(item.quotePriceCents / 100).toFixed(0)}` : '—';
-
-      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(10)
-        .text(productName, MARGIN + 8, y, { width: PAGE_W - 320 });
-
-      if (size) {
-        doc.fillColor('#6B7280').font('Helvetica').fontSize(9)
-          .text(size, PAGE_W - 260, y, { width: 80, align: 'right' });
+      if (COL.markup) {
+        const markupLabel = item.markupPercent != null ? `${item.markupPercent}%` : '—';
+        doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+           .text(markupLabel, COL.markup.x, y + 12);
       }
 
-      doc.fillColor('#6B7280').font('Helvetica').fontSize(9)
-        .text(markupStr, PAGE_W - 175, y, { width: 60, align: 'right' });
+      doc.font('Helvetica').fontSize(10).fillColor(DARK)
+         .text(String(item.quantity), COL.qty.x, y + 12);
 
-      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(10)
-        .text(priceStr, PAGE_W - 110, y, { width: 60, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK)
+         .text(`$${(item.priceCents / 100).toFixed(0)}`, COL.price.x, y + 12, { align: 'right', width: COL.price.w });
 
-      y += 36;
+      doc.moveTo(L, y + rowH).lineTo(L + PAGE_W, y + rowH)
+         .lineWidth(0.5).strokeColor(DIVIDER).stroke();
+
+      y += rowH;
     });
 
-    // ── Totals ───────────────────────────────────────────────────────────────
-    y += 8;
-    doc.moveTo(MARGIN, y).lineTo(COL_R, y).strokeColor('#E5E7EB').lineWidth(1).stroke();
-    y += 16;
+    // ── Totals block ─────────────────────────────────────────────────────────
+    y += 12;
 
-    const totalsX = PAGE_W - 240;
+    const TOTAL_X = L + PAGE_W * 0.60;
+    const TOTAL_W = PAGE_W * 0.40;
 
-    const drawRow = (label, cents, bold = false, color = '#6B7280') => {
-      const val = `$${(cents / 100).toFixed(0)}`;
-      doc.fillColor(bold ? '#111827' : color)
-        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(bold ? 12 : 10)
-        .text(label, totalsX, y, { width: 130 });
-      doc.fillColor(bold ? rawColor : color)
-        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(bold ? 12 : 10)
-        .text(val, totalsX + 130, y, { width: 60, align: 'right' });
-      y += bold ? 22 : 18;
+    const drawTotalRow = (label, valueCents, bold = false, colored = false) => {
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica')
+         .fontSize(bold ? 11 : 10)
+         .fillColor(colored ? `rgb(${br},${bg},${bb})` : (bold ? DARK : GRAY))
+         .text(label, TOTAL_X, y);
+
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica')
+         .fontSize(bold ? 11 : 10)
+         .fillColor(colored ? `rgb(${br},${bg},${bb})` : (bold ? DARK : GRAY))
+         .text(`$${(valueCents / 100).toFixed(0)}`, TOTAL_X, y, { align: 'right', width: TOTAL_W });
+
+      y += bold ? 20 : 18;
     };
 
-    drawRow('Subtotal', subtotal);
-    drawRow('Installation', install);
+    drawTotalRow('Subtotal', subtotal);
+    if (install > 0) drawTotalRow('Installation', install);
 
-    y += 4;
-    doc.moveTo(totalsX, y).lineTo(COL_R, y).strokeColor('#E5E7EB').lineWidth(0.5).stroke();
-    y += 10;
+    doc.moveTo(TOTAL_X, y).lineTo(TOTAL_X + TOTAL_W, y)
+       .lineWidth(0.5).strokeColor(DIVIDER).stroke();
+    y += 8;
 
-    drawRow('Total', total, true);
+    drawTotalRow('Total', total, true, true);
 
-    // ── Accuracy note ────────────────────────────────────────────────────────
-    y += 24;
-    doc.rect(MARGIN, y, COL_R - MARGIN, 36).fill('#EFF6FF');
-    doc.fillColor('#1D4ED8').font('Helvetica').fontSize(8)
-      .text(
-        'Measurements captured via WindowFit AR scanner (±0.25" accuracy). ' +
-        'Confirm final order dimensions with a tape measure before placing the order.',
-        MARGIN + 10, y + 10, { width: COL_R - MARGIN - 20 }
-      );
-
-    y += 52;
+    // ── Notes ────────────────────────────────────────────────────────────────
+    if (quote.notes) {
+      y += 16;
+      doc.moveTo(L, y).lineTo(L + PAGE_W, y).lineWidth(0.5).strokeColor(DIVIDER).stroke();
+      y += 12;
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(GRAY).text('NOTES', L, y);
+      y += 14;
+      doc.font('Helvetica').fontSize(10).fillColor(DARK)
+         .text(quote.notes, L, y, { width: PAGE_W, lineGap: 4 });
+    }
 
     // ── Footer ───────────────────────────────────────────────────────────────
-    doc.fillColor('#9CA3AF').font('Helvetica').fontSize(8)
-      .text(
-        `${dealerName}  ·  Generated by WindowFit  ·  ${dateStr}`,
-        MARGIN, y, { width: COL_R - MARGIN, align: 'center' }
-      );
+    const footerY = doc.page.height - doc.page.margins.bottom - 28;
+    doc.moveTo(L, footerY).lineTo(L + PAGE_W, footerY)
+       .lineWidth(0.5).strokeColor(DIVIDER).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY)
+       .text(
+         `${brandName}  ·  Generated ${quoteDate}  ·  ${quote.quote_number}`,
+         L, footerY + 8,
+         { align: 'center', width: PAGE_W }
+       );
 
     doc.end();
-    console.log(`[OK] PDF generated for quote ${quoteId}`);
 
   } catch (e) {
-    console.error('PDF generation error:', e);
+    console.error('PDF export error:', e);
     if (!res.headersSent) {
       res.status(500).json({ error: e.message });
     }
   }
 });
+
 
 // ─── HEALTH ───────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
