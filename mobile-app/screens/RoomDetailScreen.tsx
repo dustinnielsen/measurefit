@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Modal, FlatList, TextInput,
@@ -283,11 +283,30 @@ const configuratorStyles = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
+// CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 const CATEGORIES = ['All', 'Roller', 'Shutter', 'Cellular', 'Roman', 'Natural', 'Other'];
-const BRANDS = ['All Brands', 'Norman', 'Hunter Douglas', 'Other'];
+const BRANDS     = ['All Brands', 'Norman', 'Hunter Douglas', 'Other'];
 
+const OPACITY_FILTERS = [
+  { key: 'all',             label: 'All' },
+  { key: 'light_filtering', label: 'Light Filtering' },
+  { key: 'room_darkening',  label: 'Room Darkening' },
+  { key: 'blackout',        label: 'Blackout' },
+];
+
+function opacityColor(level: string) {
+  switch (level) {
+    case 'light_filtering': return '#FFD60A';
+    case 'room_darkening':  return '#FF9F0A';
+    case 'blackout':        return '#FF453A';
+    default:                return 'rgba(255,255,255,0.3)';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
 function detectBrand(name: string): string {
   if (name.startsWith('Norman')) return 'Norman';
   const hd = ['Silhouette', 'Pirouette', 'Duette', 'Vignette', 'Provenance',
@@ -333,7 +352,9 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const [productsLoading, setProductsLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
-  const [activeBrand, setActiveBrand] = useState('All Brands');
+  const [activeBrand, setActiveBrand]       = useState('All Brands');
+  const [activeOpacity, setActiveOpacity]   = useState('all');
+  const [activeFabric, setActiveFabric]     = useState('All Fabrics');
 
   const [colorPickerProduct, setColorPickerProduct] = useState<any | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -353,6 +374,22 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const productNounPlural = tenantConfig.product_noun_plural;
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+  // ── Derived fabric list — updates contextually based on other active filters ──
+  const availableFabrics = useMemo(() => {
+    const preFiltered = products.filter(p => {
+      if (activeCategory !== 'All' && p.category !== activeCategory) return false;
+      if (activeBrand !== 'All Brands' && detectBrand(p.name) !== activeBrand) return false;
+      if (activeOpacity !== 'all' && p.opacity_level !== activeOpacity) return false;
+      return true;
+    });
+    const fabrics = Array.from(
+      new Set(preFiltered.map((p: any) => p.fabric).filter(Boolean))
+    ).sort() as string[];
+    return ['All Fabrics', ...fabrics];
+  }, [products, activeCategory, activeBrand, activeOpacity]);
+
+  const effectiveFabric = availableFabrics.includes(activeFabric) ? activeFabric : 'All Fabrics';
+
   const loadWindows = async () => {
     if (!dealer) return;
     try {
@@ -371,11 +408,17 @@ export default function RoomDetailScreen({ route, navigation }: any) {
 
   const onRefresh = () => { setRefreshing(true); loadWindows(); };
 
-  const openPicker = async (windowId: string) => {
-    setTargetWindowId(windowId);
+  const resetPickerFilters = () => {
     setSearch('');
     setActiveCategory('All');
     setActiveBrand('All Brands');
+    setActiveOpacity('all');
+    setActiveFabric('All Fabrics');
+  };
+
+  const openPicker = async (windowId: string) => {
+    setTargetWindowId(windowId);
+    resetPickerFilters();
     setColorPickerProduct(null);
     setSelectedColor(null);
     setPickerVisible(true);
@@ -448,13 +491,16 @@ export default function RoomDetailScreen({ route, navigation }: any) {
     setScopeVisible(true);
   };
 
+  // ── All 4 filters applied ──────────────────────────────────────────────────
   const filteredProducts = products.filter(p => {
     if (activeCategory !== 'All' && p.category !== activeCategory) return false;
     if (activeBrand !== 'All Brands' && detectBrand(p.name) !== activeBrand) return false;
+    if (activeOpacity !== 'all' && p.opacity_level !== activeOpacity) return false;
+    if (effectiveFabric !== 'All Fabrics' && p.fabric !== effectiveFabric) return false;
     if (search) {
       const q = search.toLowerCase();
-      const inName = p.name.toLowerCase().includes(q);
-      const inDesc = (p.description ?? '').toLowerCase().includes(q);
+      const inName   = p.name.toLowerCase().includes(q);
+      const inDesc   = (p.description ?? '').toLowerCase().includes(q);
       const inColors = parseColors(p.available_colors).some((c: any) =>
         (typeof c === 'string' ? c : c.name).toLowerCase().includes(q)
       );
@@ -608,7 +654,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder={`Search products, colors, fabrics...`}
+              placeholder="Search products, colors, fabrics..."
               placeholderTextColor="rgba(255,255,255,0.25)"
               style={styles.searchInput}
             />
@@ -624,6 +670,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
               ListEmptyComponent={<Text style={styles.emptyText}>No products match your filters</Text>}
               ListHeaderComponent={
                 <View>
+                  {/* Brand filter */}
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                     {BRANDS.map(brand => (
                       <TouchableOpacity
@@ -637,12 +684,17 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>
+
+                  {/* Category filter */}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                     {CATEGORIES.map(cat => (
                       <TouchableOpacity
                         key={cat}
                         style={[styles.catChip, activeCategory === cat && { backgroundColor: brandColor + '33', borderColor: brandColor }]}
-                        onPress={() => setActiveCategory(cat)}
+                        onPress={() => {
+                          setActiveCategory(cat);
+                          setActiveFabric('All Fabrics');
+                        }}
                       >
                         <Text style={[styles.catChipText, activeCategory === cat && { color: brandColor, fontWeight: '700' }]}>
                           {cat}
@@ -650,6 +702,67 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+
+                  {/* Opacity filter */}
+                  <Text style={styles.filterSectionLabel}>OPACITY</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                    {OPACITY_FILTERS.map(o => {
+                      const isActive = activeOpacity === o.key;
+                      const color = o.key === 'all' ? brandColor : opacityColor(o.key);
+                      return (
+                        <TouchableOpacity
+                          key={o.key}
+                          style={[
+                            styles.opacityChip,
+                            isActive && { backgroundColor: color + '22', borderColor: color },
+                          ]}
+                          onPress={() => {
+                            setActiveOpacity(o.key);
+                            setActiveFabric('All Fabrics');
+                          }}
+                        >
+                          {o.key !== 'all' && (
+                            <View style={[styles.opacityDot, { backgroundColor: color }]} />
+                          )}
+                          <Text style={[
+                            styles.opacityChipText,
+                            isActive && { color, fontWeight: '700' },
+                          ]}>
+                            {o.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Fabric filter — only when fabrics are available */}
+                  {availableFabrics.length > 1 && (
+                    <>
+                      <Text style={styles.filterSectionLabel}>FABRIC</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.filterRow, { paddingBottom: 12 }]}>
+                        {availableFabrics.map(fabric => {
+                          const isActive = effectiveFabric === fabric;
+                          return (
+                            <TouchableOpacity
+                              key={fabric}
+                              style={[
+                                styles.fabricChip,
+                                isActive && { backgroundColor: brandColor + '22', borderColor: brandColor },
+                              ]}
+                              onPress={() => setActiveFabric(fabric)}
+                            >
+                              <Text style={[
+                                styles.fabricChipText,
+                                isActive && { color: brandColor, fontWeight: '700' },
+                              ]}>
+                                {fabric}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </>
+                  )}
                 </View>
               }
               renderItem={({ item: p }) => {
@@ -658,6 +771,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                   : p.base_price_cents ? (p.base_price_cents / 100).toFixed(0) : null;
                 const brand = detectBrand(p.name);
                 const colors = parseColors(p.available_colors);
+                const opColor = opacityColor(p.opacity_level);
                 return (
                   <TouchableOpacity
                     style={styles.productRow}
@@ -678,6 +792,22 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                           <Text style={styles.brandBadgeText}>{brand === 'Hunter Douglas' ? 'HD' : 'NWF'}</Text>
                         </View>
                       </View>
+                      {/* Fabric + opacity pill */}
+                      {(p.fabric || p.opacity_level) && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          {p.fabric && (
+                            <Text style={styles.productFabricLabel}>{p.fabric}</Text>
+                          )}
+                          {p.opacity_level && (
+                            <View style={[styles.opacityPill, { backgroundColor: opColor + '22' }]}>
+                              <View style={[styles.opacityPillDot, { backgroundColor: opColor }]} />
+                              <Text style={[styles.opacityPillText, { color: opColor }]}>
+                                {p.opacity_level === 'light_filtering' ? 'Light' : p.opacity_level === 'room_darkening' ? 'R. Dark' : 'Blackout'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
                       {p.description ? (
                         <Text style={styles.productRowDesc} numberOfLines={2}>{p.description}</Text>
                       ) : null}
@@ -859,24 +989,47 @@ const styles = StyleSheet.create({
   modalCloseText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
   modalSearch: { padding: 16, paddingBottom: 8 },
   searchInput: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 15, padding: 12 },
-  filterRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
+  filterRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
+  filterSectionLabel: { color: 'rgba(255,255,255,0.25)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 2 },
+
+  // Brand chips
   brandChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   brandChipActive: { backgroundColor: 'rgba(255,214,10,0.15)', borderColor: '#FFD60A' },
   brandChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
   brandChipTextActive: { color: '#FFD60A', fontWeight: '700' },
-  categories: { paddingHorizontal: 16, gap: 8, paddingBottom: 12 },
+
+  // Category chips
   catChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   catChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
+
+  // Opacity chips
+  opacityChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'transparent' },
+  opacityChipText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' },
+  opacityDot: { width: 7, height: 7, borderRadius: 4 },
+
+  // Fabric chips
+  fabricChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  fabricChipText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: '600' },
+
+  // Product list
   productList: { paddingHorizontal: 16, paddingTop: 4 },
   emptyText: { color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 40, fontSize: 14 },
   productRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 12 },
   productRowEmoji: { fontSize: 28, marginTop: 2 },
   productRowName: { color: 'white', fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  productFabricLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
   productRowDesc: { color: 'rgba(255,255,255,0.35)', fontSize: 11, lineHeight: 16, marginTop: 3 },
   productRowPrice: { fontWeight: '700', fontSize: 14, minWidth: 44, textAlign: 'right' },
   brandBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: 'rgba(48,209,88,0.15)' },
   brandBadgeHD: { backgroundColor: 'rgba(10,132,255,0.15)' },
   brandBadgeText: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700' },
+
+  // Opacity pill on product rows
+  opacityPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  opacityPillDot: { width: 5, height: 5, borderRadius: 3 },
+  opacityPillText: { fontSize: 9, fontWeight: '700' },
+
+  // Color swatches
   colorSwatch: { width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   colorSwatchLarge: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   colorRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
