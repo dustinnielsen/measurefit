@@ -313,7 +313,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       await quotesService.addLineItem(quote.id, {
         window_id: window.id,
         product_id: window.product.id,
-        description: `${cap(tenantConfig.product_noun_plural)} — ${window.product.name}`,
+        product_name: window.product.name,
         width_in: window.width_in,
         height_in: window.height_in,
         unit_price_cents: dealerCostCents,
