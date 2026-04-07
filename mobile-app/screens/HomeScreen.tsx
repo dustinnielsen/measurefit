@@ -1,24 +1,57 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Modal,
+  View, Text, StyleSheet, TouchableOpacity,
+  ActivityIndicator, Modal, TextInput,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 import { roomsService, supabase } from '../lib/supabase';
 
+const STATUS_COLORS: Record<string, string> = {
+  draft:     'rgba(255,255,255,0.3)',
+  sent:      '#0A84FF',
+  viewed:    '#FF9F0A',
+  approved:  '#30D158',
+  declined:  '#FF453A',
+  ordered:   '#BF5AF2',
+  installed: '#30D158',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft', sent: 'Sent', viewed: 'Viewed',
+  approved: 'Approved ✓', declined: 'Declined',
+  ordered: 'Ordered', installed: 'Installed ✓',
+};
+
+const PAYMENT_COLORS: Record<string, string> = {
+  link_sent:    '#FF9F0A',
+  deposit_paid: '#30D158',
+  paid_in_full: '#30D158',
+};
+
+const PAYMENT_LABELS: Record<string, string> = {
+  link_sent:    '🔗 Link Sent',
+  deposit_paid: '💰 Deposit',
+  paid_in_full: '💰 Paid',
+};
+
 export default function HomeScreen({ navigation }: any) {
   const { dealer }       = useAuth();
   const { tenantConfig } = useTenant();
 
-  const [rooms, setRooms]               = useState<any[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [jobName, setJobName]           = useState('');
-  const [editingJob, setEditingJob]     = useState(false);
-  const [jobDraft, setJobDraft]         = useState('');
-  const [collections, setCollections]   = useState(0);
-  const [colorways, setColorways]       = useState(0);
+  const [rooms, setRooms]           = useState<any[]>([]);
+  const [recentQuotes, setRecentQuotes] = useState<any[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [jobName, setJobName]       = useState('');
+  const [editingJob, setEditingJob] = useState(false);
+  const [jobDraft, setJobDraft]     = useState('');
+
+  // Metrics
+  const [approvedValue, setApprovedValue] = useState(0);
+  const [quotesSent, setQuotesSent]       = useState(0);
+  const [totalWindows, setTotalWindows]   = useState(0);
+  const [quoteCount, setQuoteCount]       = useState(0);
 
   const brandColor = tenantConfig.primary_color;
 
@@ -29,22 +62,45 @@ export default function HomeScreen({ navigation }: any) {
   const loadData = async () => {
     if (!dealer) return;
     try {
-      const [roomData, colRes] = await Promise.all([
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+
+      const [roomData, quotesRes, sentRes] = await Promise.all([
         roomsService.getRooms(dealer.id),
-        supabase.from('fabric_collections').select('id, colorways').eq('is_active', true),
+        supabase
+          .from('quotes')
+          .select(`
+            id, quote_number, status, total_cents, payment_status, created_at,
+            customer:customers(first_name, last_name)
+          `)
+          .eq('dealer_id', dealer.id)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('quotes')
+          .select('id', { count: 'exact', head: true })
+          .eq('dealer_id', dealer.id)
+          .in('status', ['sent', 'viewed', 'approved', 'ordered', 'installed'])
+          .gte('created_at', monthStart.toISOString()),
       ]);
-      setRooms(roomData ?? []);
-      const cols = colRes.data ?? [];
-      setCollections(cols.length);
-      setColorways(cols.reduce((a: number, c: any) => a + (c.colorways?.length ?? 0), 0));
+
+      const allRooms = roomData ?? [];
+      setRooms(allRooms);
+      setTotalWindows(allRooms.reduce((a: number, r: any) => a + (r.windows?.length ?? 0), 0));
+
+      const quotes = quotesRes.data ?? [];
+      setQuoteCount(quotes.length);
+      setRecentQuotes(quotes.slice(0, 3));
+
+      const approved = quotes
+        .filter((q: any) => ['approved', 'ordered', 'installed'].includes(q.status))
+        .reduce((a: number, q: any) => a + (q.total_cents ?? 0), 0);
+      setApprovedValue(approved);
+      setQuotesSent(sentRes.count ?? 0);
+
     } catch (e) { console.error('HomeScreen load', e); }
     finally { setLoading(false); }
   };
-
-  const totalWindows   = rooms.reduce((a, r) => a + (r.windows?.length ?? 0), 0);
-  const coveredWindows = rooms.reduce((a, r) => a + (r.windows?.filter((w: any) => w.product_id || w.fabric_collection_name).length ?? 0), 0);
-  const progress       = totalWindows > 0 ? coveredWindows / totalWindows : 0;
-  const lastRoom       = rooms.length > 0 ? rooms[rooms.length - 1] : null;
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -53,7 +109,14 @@ export default function HomeScreen({ navigation }: any) {
     return 'Good evening';
   };
 
-  const dealerName = (dealer as any)?.name ?? (dealer as any)?.contact_name ?? 'there';
+  const dealerFirstName = (() => {
+    const name = (dealer as any)?.owner_name ?? (dealer as any)?.name ?? '';
+    return name.split(' ')[0] ?? name;
+  })();
+
+  const coveredWindows = rooms.reduce((a, r) => a +
+    (r.windows?.filter((w: any) => w.product_id || w.fabric_collection_name).length ?? 0), 0
+  );
 
   if (loading) {
     return (
@@ -64,136 +127,142 @@ export default function HomeScreen({ navigation }: any) {
   }
 
   return (
-    <ScrollView style={S.container} contentContainerStyle={S.content}>
+    <View style={S.container}>
 
       {/* ── Header ── */}
       <View style={S.header}>
-        <View style={S.headerLeft}>
-          <Text style={S.greeting}>{greeting()}</Text>
-          <Text style={S.dealerName}>{dealerName}</Text>
+        <View>
+          <Text style={S.greeting}>{greeting()}, {dealerFirstName}</Text>
+          <Text style={S.subline}>
+            {totalWindows === 0
+              ? "Let's get measuring."
+              : coveredWindows === totalWindows
+              ? 'All windows covered. Ready to quote.'
+              : `${totalWindows - coveredWindows} window${totalWindows - coveredWindows !== 1 ? 's' : ''} left to cover.`}
+          </Text>
         </View>
-        <View style={[S.brandBadge, { backgroundColor: brandColor + '22', borderColor: brandColor + '44' }]}>
-          <Text style={[S.brandBadgeText, { color: brandColor }]}>WindowFit</Text>
+        <TouchableOpacity
+          style={[S.jobPill, { borderColor: jobName ? brandColor + '55' : 'rgba(255,255,255,0.1)' }]}
+          onPress={() => { setJobDraft(jobName); setEditingJob(true); }}
+        >
+          <Text style={[S.jobPillText, { color: jobName ? brandColor : 'rgba(255,255,255,0.3)' }]} numberOfLines={1}>
+            {jobName || '+ Job'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Metrics row ── */}
+      <View style={S.metricsRow}>
+        <View style={S.metricChip}>
+          <Text style={[S.metricValue, { color: '#30D158' }]}>
+            ${approvedValue >= 10000000
+              ? `${(approvedValue / 100000).toFixed(0)}k`
+              : (approvedValue / 100).toFixed(0)}
+          </Text>
+          <Text style={S.metricLabel}>Approved</Text>
+        </View>
+        <View style={S.metricDivider} />
+        <View style={S.metricChip}>
+          <Text style={[S.metricValue, { color: brandColor }]}>{quotesSent}</Text>
+          <Text style={S.metricLabel}>Sent this mo.</Text>
+        </View>
+        <View style={S.metricDivider} />
+        <View style={S.metricChip}>
+          <Text style={[S.metricValue, { color: 'rgba(255,255,255,0.8)' }]}>{totalWindows}</Text>
+          <Text style={S.metricLabel}>Windows</Text>
         </View>
       </View>
 
-      {/* ── Current Job ── */}
+      {/* ── Hero: New Quote ── */}
       <TouchableOpacity
-        style={[S.jobCard, { borderColor: jobName ? brandColor + '44' : 'rgba(255,255,255,0.08)' }]}
-        onPress={() => { setJobDraft(jobName); setEditingJob(true); }}
-        activeOpacity={0.7}
+        style={[S.heroCard, { backgroundColor: brandColor }]}
+        onPress={() => navigation.navigate('Quotes', { screen: 'QuoteBuilder', params: {} })}
+        activeOpacity={0.85}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={S.jobLabel}>CURRENT JOB</Text>
-          <Text style={[S.jobName, !jobName && S.jobNameEmpty]}>
-            {jobName || 'Tap to set customer name...'}
-          </Text>
+        <View style={S.heroContent}>
+          <View>
+            <Text style={S.heroLabel}>START HERE</Text>
+            <Text style={S.heroTitle}>New Quote</Text>
+            <Text style={S.heroSub}>Build, price & send to customer</Text>
+          </View>
+          <Text style={S.heroIcon}>📋</Text>
         </View>
-        <Text style={[S.jobEdit, { color: brandColor }]}>{jobName ? 'Edit' : '+'}</Text>
+        <View style={S.heroFooter}>
+          <Text style={S.heroStat}>{quoteCount} quote{quoteCount !== 1 ? 's' : ''} total</Text>
+          <Text style={S.heroArrow}>→</Text>
+        </View>
       </TouchableOpacity>
 
-      {/* ── Progress summary (only if rooms exist) ── */}
-      {rooms.length > 0 && (
-        <View style={S.progressCard}>
-          <View style={S.progressHeader}>
-            <Text style={S.progressTitle}>Job Progress</Text>
-            <Text style={[S.progressFraction, { color: brandColor }]}>
-              {coveredWindows}/{totalWindows} covered
-            </Text>
-          </View>
-          <View style={S.progressTrack}>
-            <View style={[S.progressFill, { width: `${progress * 100}%` as any, backgroundColor: brandColor }]} />
-          </View>
-          <Text style={S.progressSub}>{rooms.length} room{rooms.length !== 1 ? 's' : ''} · {totalWindows - coveredWindows} remaining</Text>
+      {/* ── Recent Quotes ── */}
+      <TouchableOpacity
+        style={S.recentCard}
+        onPress={() => navigation.navigate('Quotes')}
+        activeOpacity={1}
+      >
+        <View style={S.recentHeader}>
+          <Text style={S.recentTitle}>Recent Quotes</Text>
+          <Text style={[S.recentSeeAll, { color: brandColor }]}>See all →</Text>
         </View>
-      )}
 
-      {/* ── Quick actions ── */}
-      <Text style={S.sectionLabel}>QUICK ACTIONS</Text>
-      <View style={S.actionsGrid}>
-        <TouchableOpacity
-          style={[S.actionCard, S.actionCardPrimary, { backgroundColor: brandColor }]}
-          onPress={() => navigation.navigate('Scan')}
-        >
-          <Text style={S.actionEmoji}>📐</Text>
-          <Text style={S.actionLabelPrimary}>Scan Windows</Text>
-          <Text style={S.actionSubPrimary}>AR measurement</Text>
-        </TouchableOpacity>
+        {recentQuotes.length === 0 ? (
+          <Text style={S.recentEmpty}>No quotes yet — tap New Quote to start.</Text>
+        ) : (
+          recentQuotes.map((q: any, i: number) => {
+            const color = STATUS_COLORS[q.status] ?? 'rgba(255,255,255,0.3)';
+            const label = STATUS_LABELS[q.status] ?? q.status;
+            const customerName = q.customer
+              ? `${q.customer.first_name} ${q.customer.last_name}`.trim()
+              : 'No customer';
+            const total = q.total_cents ? `$${(q.total_cents / 100).toFixed(0)}` : '—';
+            const ps = q.payment_status;
+            const psColor = PAYMENT_COLORS[ps];
+            const psLabel = PAYMENT_LABELS[ps];
 
-        <TouchableOpacity
-          style={S.actionCard}
-          onPress={() => navigation.navigate('Rooms')}
-        >
-          <Text style={S.actionEmoji}>🏠</Text>
-          <Text style={S.actionLabel}>My Rooms</Text>
-          <Text style={S.actionSub}>
-            {rooms.length > 0 ? `${rooms.length} room${rooms.length !== 1 ? 's' : ''}` : 'No rooms yet'}
-          </Text>
-        </TouchableOpacity>
+            return (
+              <TouchableOpacity
+                key={q.id}
+                onPress={() => navigation.navigate('Quotes', { screen: 'QuoteBuilder', params: { quoteId: q.id } })}
+                activeOpacity={0.7}
+              >
+                {i > 0 && <View style={S.recentDivider} />}
+                <View style={S.recentRow}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={S.recentCustomer}>{customerName}</Text>
+                    <Text style={S.recentNumber}>{q.quote_number || 'Draft'}</Text>
+                  </View>
+                  <View style={S.recentRight}>
+                    <Text style={S.recentTotal}>{total}</Text>
+                    <View style={S.recentBadges}>
+                      <View style={[S.badge, { backgroundColor: color + '20', borderColor: color + '50' }]}>
+                        <Text style={[S.badgeText, { color }]}>{label}</Text>
+                      </View>
+                      {psColor && (
+                        <View style={[S.badge, { backgroundColor: psColor + '20', borderColor: psColor + '50' }]}>
+                          <Text style={[S.badgeText, { color: psColor }]}>{psLabel}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={S.actionCard}
-          onPress={() => navigation.navigate('Search')}
-        >
-          <Text style={S.actionEmoji}>🔍</Text>
-          <Text style={S.actionLabel}>Search Fabrics</Text>
-          <Text style={S.actionSub}>{collections} collections</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={S.actionCard}
-          onPress={() => navigation.navigate('Quotes')}
-        >
-          <Text style={S.actionEmoji}>📋</Text>
-          <Text style={S.actionLabel}>Quotes</Text>
-          <Text style={S.actionSub}>Build & send</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Last room worked on ── */}
-      {lastRoom && (
-        <>
-          <Text style={S.sectionLabel}>LAST ROOM</Text>
-          <TouchableOpacity
-            style={S.lastRoomCard}
-            onPress={() => navigation.navigate('Rooms', {
-              screen: 'RoomDetail',
-              params: { roomId: lastRoom.id, roomName: lastRoom.name },
-            })}
-          >
-            <View style={S.lastRoomLeft}>
-              <Text style={S.lastRoomEmoji}>🏠</Text>
-              <View>
-                <Text style={S.lastRoomName}>{lastRoom.name}</Text>
-                <Text style={S.lastRoomMeta}>
-                  {lastRoom.windows?.length ?? 0} window{(lastRoom.windows?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
-                  {lastRoom.windows?.filter((w: any) => w.product_id || w.fabric_collection_name).length ?? 0} covered
-                </Text>
-              </View>
-            </View>
-            <Text style={[S.lastRoomCta, { color: brandColor }]}>Continue →</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {/* ── Catalog stats ── */}
-      <Text style={S.sectionLabel}>CATALOG</Text>
-      <View style={S.statsRow}>
-        <View style={S.statCard}>
-          <Text style={[S.statNumber, { color: brandColor }]}>{collections}</Text>
-          <Text style={S.statLabel}>Collections</Text>
+      {/* ── Browse Fabrics ── */}
+      <TouchableOpacity
+        style={[S.searchRow, { marginBottom: 24 }]}
+        onPress={() => navigation.navigate('Search')}
+        activeOpacity={0.85}
+      >
+        <Text style={S.searchIcon}>🔍</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={S.searchTitle}>Browse Fabrics & Products</Text>
+          <Text style={S.searchSub}>Norman · Hunter Douglas · 2 brands</Text>
         </View>
-        <View style={S.statCard}>
-          <Text style={[S.statNumber, { color: brandColor }]}>{colorways}</Text>
-          <Text style={S.statLabel}>Colorways</Text>
-        </View>
-        <View style={S.statCard}>
-          <Text style={[S.statNumber, { color: brandColor }]}>2</Text>
-          <Text style={S.statLabel}>Brands</Text>
-        </View>
-      </View>
-
-      <View style={{ height: 40 }} />
+        <Text style={[S.searchArrow, { color: brandColor }]}>→</Text>
+      </TouchableOpacity>
 
       {/* ── Edit job modal ── */}
       <Modal visible={editingJob} animationType="slide" presentationStyle="pageSheet">
@@ -233,68 +302,66 @@ export default function HomeScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const S = StyleSheet.create({
-  container:          { flex: 1, backgroundColor: '#080C14' },
-  centered:           { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center' },
-  content:            { padding: 20, paddingTop: 64, gap: 12 },
+  container:      { flex: 1, backgroundColor: '#080C14', padding: 20, paddingTop: 64, gap: 12 },
+  centered:       { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center' },
 
-  header:             { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  headerLeft:         { gap: 2 },
-  greeting:           { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '500' },
-  dealerName:         { color: 'white', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
-  brandBadge:         { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
-  brandBadgeText:     { fontSize: 12, fontWeight: '700' },
+  header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
+  greeting:       { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  subline:        { color: 'rgba(255,255,255,0.35)', fontSize: 13, marginTop: 3 },
+  jobPill:        { borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 120 },
+  jobPillText:    { fontSize: 12, fontWeight: '700' },
 
-  jobCard:            { backgroundColor: '#0D1520', borderRadius: 14, padding: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  jobLabel:           { color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
-  jobName:            { color: 'white', fontSize: 16, fontWeight: '700' },
-  jobNameEmpty:       { color: 'rgba(255,255,255,0.25)', fontWeight: '400', fontSize: 14 },
-  jobEdit:            { fontSize: 13, fontWeight: '700' },
+  metricsRow:     { flexDirection: 'row', backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', paddingVertical: 14, paddingHorizontal: 8 },
+  metricChip:     { flex: 1, alignItems: 'center', gap: 3 },
+  metricValue:    { fontSize: 20, fontWeight: '800' },
+  metricLabel:    { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '600' },
+  metricDivider:  { width: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
 
-  progressCard:       { backgroundColor: '#0D1520', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 10 },
-  progressHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  progressTitle:      { color: 'white', fontSize: 14, fontWeight: '700' },
-  progressFraction:   { fontSize: 13, fontWeight: '700' },
-  progressTrack:      { height: 5, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' },
-  progressFill:       { height: '100%', borderRadius: 3 },
-  progressSub:        { color: 'rgba(255,255,255,0.35)', fontSize: 12 },
+  heroCard:       { borderRadius: 20, padding: 20, gap: 14 },
+  heroContent:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroLabel:      { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4 },
+  heroTitle:      { color: 'white', fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
+  heroSub:        { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 },
+  heroIcon:       { fontSize: 44 },
+  heroFooter:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroStat:       { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '600' },
+  heroArrow:      { color: 'white', fontSize: 18, fontWeight: '700' },
 
-  sectionLabel:       { color: 'rgba(255,255,255,0.25)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginTop: 8, marginBottom: 2 },
+  recentCard:     { backgroundColor: '#0D1520', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 12 },
+  recentHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  recentTitle:    { color: 'white', fontSize: 15, fontWeight: '800' },
+  recentSeeAll:   { fontSize: 13, fontWeight: '600' },
+  recentEmpty:    { color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center', paddingVertical: 8 },
+  recentDivider:  { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 10 },
+  recentRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  recentCustomer: { color: 'white', fontSize: 14, fontWeight: '700' },
+  recentNumber:   { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
+  recentRight:    { alignItems: 'flex-end', gap: 5 },
+  recentTotal:    { color: 'white', fontSize: 15, fontWeight: '800' },
+  recentBadges:   { flexDirection: 'row', gap: 5 },
+  badge:          { borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  badgeText:      { fontSize: 10, fontWeight: '700' },
 
-  actionsGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  actionCard:         { width: '47%', backgroundColor: '#0D1520', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 4 },
-  actionCardPrimary:  { borderWidth: 0 },
-  actionEmoji:        { fontSize: 28, marginBottom: 4 },
-  actionLabel:        { color: 'white', fontSize: 14, fontWeight: '700' },
-  actionLabelPrimary: { color: 'white', fontSize: 14, fontWeight: '800' },
-  actionSub:          { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
-  actionSubPrimary:   { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+  searchRow:      { backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  searchIcon:     { fontSize: 22 },
+  searchTitle:    { color: 'white', fontSize: 14, fontWeight: '700' },
+  searchSub:      { color: 'rgba(255,255,255,0.3)', fontSize: 11, marginTop: 2 },
+  searchArrow:    { fontSize: 16, fontWeight: '700' },
 
-  lastRoomCard:       { backgroundColor: '#0D1520', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  lastRoomLeft:       { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  lastRoomEmoji:      { fontSize: 28 },
-  lastRoomName:       { color: 'white', fontSize: 15, fontWeight: '700' },
-  lastRoomMeta:       { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
-  lastRoomCta:        { fontSize: 13, fontWeight: '700' },
-
-  statsRow:           { flexDirection: 'row', gap: 10 },
-  statCard:           { flex: 1, backgroundColor: '#0D1520', borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
-  statNumber:         { fontSize: 22, fontWeight: '800' },
-  statLabel:          { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 },
-
-  modal:              { flex: 1, backgroundColor: '#080C14' },
-  modalHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
-  modalTitle:         { color: 'white', fontSize: 18, fontWeight: '800' },
-  modalClose:         { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  modalCloseText:     { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
-  modalLabel:         { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
-  modalInput:         { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 16, padding: 14 },
-  modalSave:          { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  modalSaveText:      { color: 'white', fontWeight: '700', fontSize: 15 },
-  modalClear:         { alignItems: 'center', paddingVertical: 8 },
-  modalClearText:     { color: 'rgba(255,69,58,0.7)', fontSize: 13, fontWeight: '600' },
+  modal:          { flex: 1, backgroundColor: '#080C14' },
+  modalHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  modalTitle:     { color: 'white', fontSize: 18, fontWeight: '800' },
+  modalClose:     { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  modalCloseText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
+  modalLabel:     { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
+  modalInput:     { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 16, padding: 14 },
+  modalSave:      { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  modalSaveText:  { color: 'white', fontWeight: '700', fontSize: 15 },
+  modalClear:     { alignItems: 'center', paddingVertical: 8 },
+  modalClearText: { color: 'rgba(255,69,58,0.7)', fontSize: 13, fontWeight: '600' },
 });
