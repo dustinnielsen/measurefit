@@ -1191,10 +1191,8 @@ app.post('/api/payments/record-manual', async (req, res) => {
       notes: notes ?? null,
     });
 
-    const depositCents = req.body.depositCents
-      ? Math.round(req.body.depositCents)
-      : Math.round((quote.total_cents ?? 0) * 0.5);
-    if (depositCents < 50) return res.status(400).json({ error: 'Quote total too low to process payment' });
+    const depositCents = Math.round((quote.total_cents ?? 0) * 0.5);
+    const newStatus = amountCents >= (quote.total_cents ?? 0)
       ? 'paid_in_full'
       : amountCents >= depositCents
       ? 'deposit_paid'
