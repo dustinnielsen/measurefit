@@ -207,7 +207,60 @@ app.post('/webhook', async (req, res) => {
         }
         break;
       }
+case 'checkout.session.completed': {
+        const session = event.data.object;
+        // Only handle quote deposits — dealer billing uses same event but no metadata.type
+        if (session.metadata?.type !== 'quote_deposit') break;
 
+        const { quote_id: quoteId, dealer_id: dealerId } = session.metadata;
+
+        // Update payment record to succeeded
+        await supabaseAdmin.from('payments')
+          .update({ status: 'succeeded', stripe_payment_intent_id: session.payment_intent })
+          .eq('stripe_checkout_session_id', session.id);
+
+        // Update quote payment_status
+        const { data: quote } = await supabaseAdmin
+          .from('quotes')
+          .select('total_cents, deposit_amount_cents')
+          .eq('id', quoteId)
+          .single();
+
+        if (quote) {
+          const paid = session.amount_total ?? 0;
+          const newStatus = paid >= (quote.total_cents ?? 0) ? 'paid_in_full' : 'deposit_paid';
+          await supabaseAdmin.from('quotes')
+            .update({ payment_status: newStatus })
+            .eq('id', quoteId);
+        }
+
+        console.log(`[OK] Quote deposit received for quote ${quoteId}`);
+
+        // Send confirmation email to dealer
+        try {
+          const { data: fullQuote } = await supabaseAdmin
+            .from('quotes')
+            .select('quote_number, customer:customers(first_name, last_name), dealer:dealers(name, email)')
+            .eq('id', quoteId)
+            .single();
+
+          if (fullQuote?.dealer?.email) {
+            await resend.emails.send({
+              from: 'WindowFit <hello@windowfit.io>',
+              to: [fullQuote.dealer.email],
+              subject: `Deposit received — Quote ${fullQuote.quote_number}`,
+              html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+                <h2 style="color:#0A1628">Deposit Received 💰</h2>
+                <p style="color:#444"><strong>${fullQuote.customer?.first_name} ${fullQuote.customer?.last_name}</strong> has paid their deposit for quote <strong>${fullQuote.quote_number}</strong>.</p>
+                <p style="color:#444">Amount: <strong>$${((session.amount_total ?? 0) / 100).toFixed(2)}</strong></p>
+                <a href="https://windowfit.io" style="display:inline-block;background:#2563EB;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin-top:16px">View in WindowFit →</a>
+              </div>`,
+            });
+          }
+        } catch (e) { console.error('Deposit email failed:', e.message); }
+
+        break;
+      }
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
 
@@ -1034,7 +1087,141 @@ app.delete('/api/dealer/pricing/:dealerId/overrides/:productId', async (req, res
     res.status(500).json({ error: err.message });
   }
 });
+// ─── QUOTE PAYMENT ROUTES ──────────────────────────────────────────────────────
 
+app.post('/api/payments/create-checkout-session', async (req, res) => {
+  try {
+    const { quoteId, dealerId } = req.body;
+    if (!quoteId || !dealerId) {
+      return res.status(400).json({ error: 'quoteId and dealerId are required' });
+    }
+
+    const { data: quote, error: quoteError } = await supabaseAdmin
+      .from('quotes')
+      .select('id, quote_number, total_cents, payment_status, customer:customers(first_name, last_name, email), dealer:dealers(name, brand_color)')
+      .eq('id', quoteId)
+      .single();
+
+    if (quoteError || !quote) return res.status(404).json({ error: 'Quote not found' });
+    if (quote.payment_status === 'deposit_paid' || quote.payment_status === 'paid_in_full') {
+      return res.status(400).json({ error: 'Quote already has a completed payment' });
+    }
+
+    const depositCents = Math.round((quote.total_cents ?? 0) * 0.5);
+    if (depositCents < 50) return res.status(400).json({ error: 'Quote total too low to process payment' });
+
+    const customerName = `${quote.customer.first_name} ${quote.customer.last_name}`.trim();
+    const PORTAL = process.env.PORTAL_URL || 'https://windowfit.io';
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: depositCents,
+          product_data: {
+            name: `50% Deposit — Quote ${quote.quote_number}`,
+            description: `${customerName} · ${quote.dealer.name}`,
+          },
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        type: 'quote_deposit',
+        quote_id: quoteId,
+        dealer_id: dealerId,
+      },
+      customer_email: quote.customer.email ?? undefined,
+      success_url: `${PORTAL}/payment-success?quote=${quoteId}&session={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${PORTAL}/payment-cancelled?quote=${quoteId}`,
+    });
+
+    // Insert pending payment record
+    await supabaseAdmin.from('payments').insert({
+      quote_id: quoteId,
+      dealer_id: dealerId,
+      stripe_checkout_session_id: session.id,
+      amount_cents: depositCents,
+      currency: 'usd',
+      status: 'pending',
+      payment_method: 'stripe_link',
+    });
+
+    // Mark quote as link sent
+    await supabaseAdmin.from('quotes')
+      .update({ payment_status: 'link_sent', deposit_amount_cents: depositCents })
+      .eq('id', quoteId);
+
+    res.json({ url: session.url, sessionId: session.id, depositCents });
+  } catch (err) {
+    console.error('Create checkout session error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/payments/record-manual', async (req, res) => {
+  try {
+    const { quoteId, dealerId, amountCents, paymentMethod, notes } = req.body;
+    if (!quoteId || !dealerId || !amountCents || !paymentMethod) {
+      return res.status(400).json({ error: 'quoteId, dealerId, amountCents, and paymentMethod are required' });
+    }
+    if (!['manual_cash', 'manual_check'].includes(paymentMethod)) {
+      return res.status(400).json({ error: 'paymentMethod must be manual_cash or manual_check' });
+    }
+
+    const { data: quote, error: quoteError } = await supabaseAdmin
+      .from('quotes')
+      .select('id, total_cents, payment_status')
+      .eq('id', quoteId)
+      .single();
+
+    if (quoteError || !quote) return res.status(404).json({ error: 'Quote not found' });
+
+    await supabaseAdmin.from('payments').insert({
+      quote_id: quoteId,
+      dealer_id: dealerId,
+      amount_cents: amountCents,
+      currency: 'usd',
+      status: 'succeeded',
+      payment_method: paymentMethod,
+      notes: notes ?? null,
+    });
+
+    const depositCents = Math.round((quote.total_cents ?? 0) * 0.5);
+    const newStatus = amountCents >= (quote.total_cents ?? 0)
+      ? 'paid_in_full'
+      : amountCents >= depositCents
+      ? 'deposit_paid'
+      : 'link_sent';
+
+    await supabaseAdmin.from('quotes')
+      .update({ payment_status: newStatus, deposit_amount_cents: amountCents })
+      .eq('id', quoteId);
+
+    res.json({ success: true, payment_status: newStatus });
+  } catch (err) {
+    console.error('Record manual payment error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/payments/:quoteId', async (req, res) => {
+  try {
+    const { quoteId } = req.params;
+    const { data, error } = await supabaseAdmin
+      .from('payments')
+      .select('*')
+      .eq('quote_id', quoteId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ payments: data });
+  } catch (err) {
+    console.error('Get payments error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', function() {

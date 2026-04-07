@@ -145,6 +145,22 @@ export default function QuoteScreen({ navigation }: any) {
                     <View style={[styles.statusBadge, { backgroundColor: `${color}20`, borderColor: `${color}50` }]}>
                       <Text style={[styles.statusText, { color }]}>{STATUS_LABELS[q.status]}</Text>
                     </View>
+                    {q.payment_status && q.payment_status !== 'unpaid' && (
+                      <View style={[styles.statusBadge, {
+                        backgroundColor: (q.payment_status === 'deposit_paid' || q.payment_status === 'paid_in_full')
+                          ? 'rgba(48,209,88,0.1)' : 'rgba(255,159,10,0.1)',
+                        borderColor: (q.payment_status === 'deposit_paid' || q.payment_status === 'paid_in_full')
+                          ? 'rgba(48,209,88,0.3)' : 'rgba(255,159,10,0.3)',
+                      }]}>
+                        <Text style={[styles.statusText, {
+                          color: (q.payment_status === 'deposit_paid' || q.payment_status === 'paid_in_full')
+                            ? '#30D158' : '#FF9F0A',
+                        }]}>
+                          {q.payment_status === 'paid_in_full' ? '💰 Paid' :
+                           q.payment_status === 'deposit_paid' ? '💰 Deposit' : '🔗 Link Sent'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </TouchableOpacity>
 

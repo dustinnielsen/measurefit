@@ -25,6 +25,20 @@ import type { Quote, Customer } from '../lib/supabase';
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const DEFAULT_MARKUP  = 40;
+
+const PAYMENT_STATUS_COLORS: Record<string, string> = {
+  unpaid:       'rgba(255,255,255,0.3)',
+  link_sent:    '#FF9F0A',
+  deposit_paid: '#30D158',
+  paid_in_full: '#30D158',
+};
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  unpaid:       'Unpaid',
+  link_sent:    'Link Sent',
+  deposit_paid: 'Deposit Paid ✓',
+  paid_in_full: 'Paid in Full ✓',
+};
 const DEFAULT_INSTALL = 15;
 const API_BASE        = 'https://windowfit-production.up.railway.app';
 
@@ -313,7 +327,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       await quotesService.addLineItem(quote.id, {
         window_id: window.id,
         product_id: window.product.id,
-        product_name: window.product.name,
+        description: window.product.name,
         width_in: window.width_in,
         height_in: window.height_in,
         unit_price_cents: dealerCostCents,
@@ -884,13 +898,50 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         ) : (
           <>
             <PDFButton full />
-            <View style={styles.sentStatusCard}>
-              <Text style={styles.sentStatusText}>
-                {quote.status === 'approved'
-                  ? '✅ Customer approved this quote'
-                  : `Quote is ${quote.status}`}
-              </Text>
-            </View>
+
+            {/* ── Payment status badge ───────────────────────────────── */}
+            {(() => {
+              const ps = (quote as any).payment_status ?? 'unpaid';
+              const psColor = PAYMENT_STATUS_COLORS[ps] ?? 'rgba(255,255,255,0.3)';
+              const psLabel = PAYMENT_STATUS_LABELS[ps] ?? ps;
+              const isPaid  = ps === 'deposit_paid' || ps === 'paid_in_full';
+              return (
+                <>
+                  <TouchableOpacity
+                    style={[
+                      styles.paymentBtn,
+                      isPaid
+                        ? { backgroundColor: 'rgba(48,209,88,0.1)', borderColor: 'rgba(48,209,88,0.3)' }
+                        : { backgroundColor: brandColor + '18', borderColor: brandColor + '66' },
+                    ]}
+                    onPress={() => navigation.navigate('Payment', {
+                      quoteId: quote.id,
+                      quoteNumber: quote.quote_number,
+                      totalCents: computedTotal,
+                      depositCents: Math.round(computedTotal * 0.5),
+                      paymentStatus: ps,
+                    })}
+                  >
+                    <Text style={[styles.paymentBtnText, { color: isPaid ? '#30D158' : brandColor }]}>
+                      {isPaid ? `💰 ${psLabel}` : '💳 Collect Payment'}
+                    </Text>
+                    {!isPaid && (
+                      <Text style={[styles.paymentBtnSub, { color: brandColor + 'AA' }]}>
+                        50% deposit · ${(Math.round(computedTotal * 0.5) / 100).toFixed(2)}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={styles.sentStatusCard}>
+                    <Text style={styles.sentStatusText}>
+                      {quote.status === 'approved'
+                        ? '✅ Customer approved this quote'
+                        : `Quote is ${quote.status}`}
+                    </Text>
+                  </View>
+                </>
+              );
+            })()}
           </>
         )}
 
@@ -1085,4 +1136,7 @@ const styles = StyleSheet.create({
   windowPickerPrice:    { color: '#30D158', fontWeight: '700', fontSize: 15 },
   windowPickerPriceSub: { color: 'rgba(255,255,255,0.25)', fontSize: 10, marginTop: 1 },
   addChevron:           { fontSize: 22, fontWeight: '700', marginLeft: 4 },
+  paymentBtn:           { borderRadius: 14, paddingVertical: 16, paddingHorizontal: 18, borderWidth: 1, alignItems: 'center', gap: 4 },
+  paymentBtnText:       { fontWeight: '700', fontSize: 15 },
+  paymentBtnSub:        { fontSize: 12, fontWeight: '500' },
 });

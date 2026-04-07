@@ -17,6 +17,7 @@ import RoomDetailScreen from './screens/RoomDetailScreen';
 import QuoteScreen from './screens/QuoteScreen';
 import QuoteBuilderScreen from './screens/QuoteBuilderScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import PaymentScreen from './screens/PaymentScreen';
 import { TabBarIcon } from './components/TabBarIcon';
 
 const Tab = createBottomTabNavigator();
@@ -47,6 +48,7 @@ function QuoteStackNav() {
     <QuoteStack.Navigator screenOptions={{ headerShown: false }}>
       <QuoteStack.Screen name="QuoteList"    component={QuoteScreen} />
       <QuoteStack.Screen name="QuoteBuilder" component={QuoteBuilderScreen} />
+      <QuoteStack.Screen name="Payment" component={PaymentScreen} />
     </QuoteStack.Navigator>
   );
 }
