@@ -1107,7 +1107,7 @@ app.post('/api/payments/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: 'Quote already has a completed payment' });
     }
 
-    console.log('PAYMENT DEBUG:', { bodyDepositCents: req.body.depositCents, quoteTotalCents: quote.total_cents });
+    
     const depositCents = req.body.depositCents
       ? Math.round(req.body.depositCents)
       : Math.round((quote.total_cents ?? 0) * 0.5);
