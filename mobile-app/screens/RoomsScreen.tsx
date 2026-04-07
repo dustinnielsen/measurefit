@@ -48,7 +48,7 @@ export default function RoomsScreen({ navigation }: any) {
   const onRefresh = () => { setRefreshing(true); loadRooms(); };
 
   const totalWindows = rooms.reduce((a, r) => a + (r.windows?.length ?? 0), 0);
-  const coveredWindows = rooms.reduce((a, r) => a + (r.windows?.filter((w: any) => w.product_id).length ?? 0), 0);
+  const coveredWindows = rooms.reduce((a, r) => a + (r.windows?.filter((w: any) => w.product_id || w.fabric_collection_name).length ?? 0), 0);
   const progress = totalWindows > 0 ? coveredWindows / totalWindows : 0;
 
   if (loading) {
@@ -92,7 +92,7 @@ export default function RoomsScreen({ navigation }: any) {
         }
         renderItem={({ item: room }) => {
           const windows = room.windows ?? [];
-          const covered = windows.filter((w: any) => w.product_id).length;
+          const covered = windows.filter((w: any) => w.product_id || w.fabric_collection_name).length;
           return (
             <TouchableOpacity
               style={styles.roomCard}
@@ -111,7 +111,7 @@ export default function RoomsScreen({ navigation }: any) {
               <View style={styles.roomCardRight}>
                 <View style={styles.dotRow}>
                   {windows.slice(0, 6).map((w: any) => (
-                    <View key={w.id} style={[styles.dot, w.product_id ? styles.dotCovered : styles.dotEmpty]} />
+                    <View key={w.id} style={[styles.dot, (w.product_id || w.fabric_collection_name) ? styles.dotCovered : styles.dotEmpty]} />
                   ))}
                   {windows.length > 6 && <Text style={styles.moreDots}>+{windows.length - 6}</Text>}
                 </View>
