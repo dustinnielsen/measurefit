@@ -1107,7 +1107,10 @@ app.post('/api/payments/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: 'Quote already has a completed payment' });
     }
 
-    const depositCents = Math.round((quote.total_cents ?? 0) * 0.5);
+    console.log('PAYMENT DEBUG:', { bodyDepositCents: req.body.depositCents, quoteTotalCents: quote.total_cents });
+    const depositCents = req.body.depositCents
+      ? Math.round(req.body.depositCents)
+      : Math.round((quote.total_cents ?? 0) * 0.5);
     if (depositCents < 50) return res.status(400).json({ error: 'Quote total too low to process payment' });
 
     const customerName = `${quote.customer.first_name} ${quote.customer.last_name}`.trim();
@@ -1188,8 +1191,10 @@ app.post('/api/payments/record-manual', async (req, res) => {
       notes: notes ?? null,
     });
 
-    const depositCents = Math.round((quote.total_cents ?? 0) * 0.5);
-    const newStatus = amountCents >= (quote.total_cents ?? 0)
+    const depositCents = req.body.depositCents
+      ? Math.round(req.body.depositCents)
+      : Math.round((quote.total_cents ?? 0) * 0.5);
+    if (depositCents < 50) return res.status(400).json({ error: 'Quote total too low to process payment' });
       ? 'paid_in_full'
       : amountCents >= depositCents
       ? 'deposit_paid'

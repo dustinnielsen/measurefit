@@ -55,6 +55,7 @@ export default function PaymentScreen({ route, navigation }: any) {
   const handleSendLink = async () => {
     if (!dealer) return;
     setLoading(true);
+    console.log('DEBUG payment:', { quoteId, deposit, total, dealerId: dealer?.id });
     try {
       const res = await fetch(`${API_BASE}/api/payments/create-checkout-session`, {
         method: 'POST',
