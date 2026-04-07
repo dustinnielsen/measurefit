@@ -59,8 +59,9 @@ export default function PaymentScreen({ route, navigation }: any) {
       const res = await fetch(`${API_BASE}/api/payments/create-checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quoteId, dealerId: dealer.id }),
+        body: JSON.stringify({ quoteId, dealerId: dealer.id, depositCents: deposit }),
       });
+
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Failed to create payment link');
 
