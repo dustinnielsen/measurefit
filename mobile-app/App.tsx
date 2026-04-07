@@ -8,8 +8,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { TenantProvider } from './context/TenantContext';
 // Screens
 import LoginScreen from './screens/LoginScreen';
+import HomeScreen from './screens/HomeScreen';
 import ScanScreen from './screens/ScanScreen';
-import CatalogScreen from './screens/SearchScreen';
+import SearchScreen from './screens/SearchScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RoomsScreen from './screens/RoomsScreen';
 import RoomDetailScreen from './screens/RoomDetailScreen';
@@ -19,23 +20,23 @@ import SettingsScreen from './screens/SettingsScreen';
 import { TabBarIcon } from './components/TabBarIcon';
 
 const Tab = createBottomTabNavigator();
-const CatalogStack = createNativeStackNavigator();
-const RoomsStack = createNativeStackNavigator();
-const QuoteStack = createNativeStackNavigator();
+const SearchStack = createNativeStackNavigator();
+const RoomsStack  = createNativeStackNavigator();
+const QuoteStack  = createNativeStackNavigator();
 
-function CatalogStackNav() {
+function SearchStackNav() {
   return (
-    <CatalogStack.Navigator screenOptions={{ headerShown: false }}>
-      <CatalogStack.Screen name="CatalogList" component={CatalogScreen} />
-      <CatalogStack.Screen name="ProductDetail" component={ProductDetailScreen} />
-    </CatalogStack.Navigator>
+    <SearchStack.Navigator screenOptions={{ headerShown: false }}>
+      <SearchStack.Screen name="SearchList"    component={SearchScreen} />
+      <SearchStack.Screen name="ProductDetail" component={ProductDetailScreen} />
+    </SearchStack.Navigator>
   );
 }
 
 function RoomsStackNav() {
   return (
     <RoomsStack.Navigator screenOptions={{ headerShown: false }}>
-      <RoomsStack.Screen name="RoomsList" component={RoomsScreen} />
+      <RoomsStack.Screen name="RoomsList"  component={RoomsScreen} />
       <RoomsStack.Screen name="RoomDetail" component={RoomDetailScreen} />
     </RoomsStack.Navigator>
   );
@@ -44,7 +45,7 @@ function RoomsStackNav() {
 function QuoteStackNav() {
   return (
     <QuoteStack.Navigator screenOptions={{ headerShown: false }}>
-      <QuoteStack.Screen name="QuoteList" component={QuoteScreen} />
+      <QuoteStack.Screen name="QuoteList"    component={QuoteScreen} />
       <QuoteStack.Screen name="QuoteBuilder" component={QuoteBuilderScreen} />
     </QuoteStack.Navigator>
   );
@@ -75,10 +76,11 @@ function MainTabs() {
         ),
       })}
     >
-      <Tab.Screen name="Scan" component={ScanScreen} />
-      <Tab.Screen name="Catalog" component={CatalogStackNav} />
-      <Tab.Screen name="Rooms" component={RoomsStackNav} />
-      <Tab.Screen name="Quotes" component={QuoteStackNav} />
+      <Tab.Screen name="Home"     component={HomeScreen} />
+      <Tab.Screen name="Scan"     component={ScanScreen} />
+      <Tab.Screen name="Rooms"    component={RoomsStackNav} />
+      <Tab.Screen name="Search"   component={SearchStackNav} />
+      <Tab.Screen name="Quotes"   component={QuoteStackNav} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
