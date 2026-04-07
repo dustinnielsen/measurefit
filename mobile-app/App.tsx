@@ -9,7 +9,7 @@ import { TenantProvider } from './context/TenantContext';
 // Screens
 import LoginScreen from './screens/LoginScreen';
 import ScanScreen from './screens/ScanScreen';
-import CatalogScreen from './screens/CatalogScreen';
+import CatalogScreen from './screens/SearchScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RoomsScreen from './screens/RoomsScreen';
 import RoomDetailScreen from './screens/RoomDetailScreen';
