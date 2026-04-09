@@ -802,7 +802,7 @@ app.post('/api/quotes/:id/pdf', async (req, res) => {
 
 // ─── HEALTH ───────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'WindowFit Server', stripe: 'connected' });
+  res.json({ status: 'ok', service: 'MeasureFit Server', stripe: 'connected' });
 });
 
 // ─── ADMIN AUTH ───────────────────────────────────────────────────────────────
@@ -1228,5 +1228,5 @@ app.get('/api/payments/:quoteId', async (req, res) => {
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', function() {
-  console.log('WindowFit server running on port ' + PORT);
+  console.log('MeasureFit server running on port ' + PORT);
 });

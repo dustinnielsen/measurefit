@@ -396,10 +396,10 @@ export const dealersService = {
     const ext = file.name.split('.').pop();
     const path = `dealer-logos/${dealerId}/logo.${ext}`;
     const { error } = await supabase.storage
-      .from('windowfit-assets')
+      .from('measurefit-assets')
       .upload(path, file, { upsert: true });
     if (error) throw error;
-    const { data } = supabase.storage.from('windowfit-assets').getPublicUrl(path);
+    const { data } = supabase.storage.from('measurefit-assets').getPublicUrl(path);
     return data.publicUrl;
   },
 };
@@ -641,10 +641,10 @@ export const roomsService = {
   async uploadWindowPhoto(dealerId: string, windowId: string, file: File): Promise<string> {
     const path = `window-photos/${dealerId}/${windowId}.jpg`;
     const { error } = await supabase.storage
-      .from('windowfit-assets')
+      .from('measurefit-assets')
       .upload(path, file, { upsert: true });
     if (error) throw error;
-    const { data } = supabase.storage.from('windowfit-assets').getPublicUrl(path);
+    const { data } = supabase.storage.from('measurefit-assets').getPublicUrl(path);
     return data.publicUrl;
   },
 
