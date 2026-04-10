@@ -5,7 +5,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
 const Stripe = require('stripe');
 const PDFDocument = require('pdfkit');
-
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
 const app = express();
 
 app.use('/webhook', express.raw({ type: 'application/json' }));
@@ -1222,6 +1223,126 @@ app.get('/api/payments/:quoteId', async (req, res) => {
     res.json({ payments: data });
   } catch (err) {
     console.error('Get payments error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// --- VOICE MEASUREMENT ---
+const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+app.post('/api/voice/transcribe', upload.single('audio'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No audio file provided' });
+
+    // Transcribe with Whisper
+    const { toFile } = require('openai');
+    const audioFile = await toFile(
+      require('fs').createReadStream(file.path),
+      file.originalname || 'recording.webm',
+      { type: file.mimetype || 'audio/webm' }
+    );
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-1',
+    });
+    const transcript = transcription.text;
+
+    // Parse with GPT-4o-mini
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a window measurement parser for a window covering dealer app. 
+Extract measurement data from spoken input and return ONLY valid JSON, no markdown, no explanation.
+Return this exact structure:
+{"label":"string","width_inches":number,"height_inches":number,"mount_type":"inside"|"outside"}
+Rules:
+- Convert feet+inches to total inches (e.g. "4 feet 2 inches" = 50)
+- Convert fractions (e.g. "36 and a half" = 36.5, "37 three quarters" = 37.75)
+- label: window name/location (e.g. "Living Room Left", "Master Bedroom"). If not mentioned use "Window"
+- mount_type: default to "inside" if not mentioned
+- If you cannot parse width or height, return {"error":"could not parse measurements"}`
+        },
+        { role: 'user', content: transcript }
+      ],
+      temperature: 0,
+    });
+
+    const raw = completion.choices[0].message.content ?? '';
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = { error: 'parse_failed', raw };
+    }
+
+    // Clean up temp file
+    require('fs').unlinkSync(file.path);
+
+    res.json({ transcript, parsed });
+  } catch (err) {
+    console.error('Voice transcribe error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.post('/api/voice/parse', async (req, res) => {
+  try {
+    const { transcript } = req.body;
+    if (!transcript) return res.status(400).json({ error: 'No transcript provided' });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a window measurement parser for a window covering dealer app. 
+Extract measurement data from spoken input and return ONLY valid JSON, no markdown, no explanation.
+Return this exact structure:
+{"label":"string","width_inches":number,"height_inches":number,"mount_type":"inside"|"outside"}
+Rules:
+- Convert feet+inches to total inches (e.g. "4 feet 2 inches" = 50)
+- Convert fractions (e.g. "36 and a half" = 36.5, "37 three quarters" = 37.75)
+- label: window name/location (e.g. "Living Room Left", "Master Bedroom"). If not mentioned use "Window"
+- mount_type: default to "inside" if not mentioned
+- If you cannot parse width or height, return {"error":"could not parse measurements"}`
+        },
+        { role: 'user', content: transcript }
+      ],
+      temperature: 0,
+    });
+    const raw = completion.choices[0].message.content ?? '';
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { error: 'parse_failed', raw }; }
+    res.json({ transcript, parsed });
+  } catch (err) {
+    console.error('Voice parse error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.post('/api/voice/parse', async (req, res) => {
+  try {
+    const { transcript } = req.body;
+    if (!transcript) return res.status(400).json({ error: 'No transcript provided' });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a window measurement parser for a window covering dealer app. Extract measurement data from spoken input and return ONLY valid JSON, no markdown, no explanation. Return this exact structure: {"label":"string","width_inches":number,"height_inches":number,"mount_type":"inside"|"outside"} Rules: Convert feet+inches to total inches. Convert fractions (e.g. "36 and a half" = 36.5). label: window name/location, default to "Window" if not mentioned. mount_type: default to "inside" if not mentioned. If you cannot parse width or height, return {"error":"could not parse measurements"}`
+        },
+        { role: 'user', content: transcript }
+      ],
+      temperature: 0,
+    });
+    const raw = completion.choices[0].message.content ?? '';
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { error: 'parse_failed', raw }; }
+    res.json({ transcript, parsed });
+  } catch (err) {
+    console.error('Voice parse error:', err);
     res.status(500).json({ error: err.message });
   }
 });
