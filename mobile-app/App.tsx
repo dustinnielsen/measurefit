@@ -9,7 +9,6 @@ import { TenantProvider } from './context/TenantContext';
 // Screens
 import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
-import ScanScreen from './screens/ScanScreen';
 import SearchScreen from './screens/SearchScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RoomsScreen from './screens/RoomsScreen';
@@ -79,7 +78,6 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home"     component={HomeScreen} />
-      <Tab.Screen name="Scan"     component={ScanScreen} />
       <Tab.Screen name="Rooms"    component={RoomsStackNav} />
       <Tab.Screen name="Search"   component={SearchStackNav} />
       <Tab.Screen name="Quotes"   component={QuoteStackNav} />

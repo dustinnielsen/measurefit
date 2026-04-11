@@ -142,12 +142,14 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const [pendingSelection, setPendingSelection] = useState<FabricSelection | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [toast, setToast] = useState('');
+  const [lastSavedWindowId, setLastSavedWindowId] = useState<string | null>(null);
 
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
   const [parsed, setParsed] = useState<ParsedMeasurement | null>(null);
   const [voiceError, setVoiceError] = useState('');
+  const [autoSave, setAutoSave] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   const [manualVisible, setManualVisible] = useState(false);
@@ -160,6 +162,8 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const lastSelectionRef = useRef<FabricSelection | null>(null);
   const windowsRef = useRef<WFWindow[]>([]);
   windowsRef.current = windows;
+  const autoSaveRef = useRef(false);
+  autoSaveRef.current = autoSave;
 
   const brandColor = tenantConfig.primary_color;
   const productNoun = tenantConfig.product_noun;
@@ -190,12 +194,56 @@ export default function RoomDetailScreen({ route, navigation }: any) {
     finally { setCollectionsLoading(false); }
   };
 
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const showToastWithUndo = (msg: string) => {
+    setToast(msg + ' · Undo');
+    setTimeout(() => { setToast(''); setLastSavedWindowId(null); }, 5000);
+  };
+
+  const undoLastSave = async () => {
+    if (!lastSavedWindowId) return;
+    try {
+      await roomsService.deleteWindow(lastSavedWindowId);
+      setWindows(prev => prev.filter(w => w.id !== lastSavedWindowId));
+      setLastSavedWindowId(null);
+      setToast('');
+    } catch (e) { console.error('undoLastSave', e); }
+  };
+
   const openVoiceModal = () => {
     setVoiceState('idle');
     setTranscript('');
     setParsed(null);
     setVoiceError('');
     setVoiceModalVisible(true);
+  };
+
+  const saveVoiceMeasurement = async (parsedData?: ParsedMeasurement) => {
+    const data = parsedData ?? parsed;
+    if (!data || !dealer) return;
+    try {
+      const { data: inserted, error } = await supabase.from('windows').insert({
+        room_id: roomId,
+        dealer_id: dealer.id,
+        label: data.label,
+        width_in: data.width_inches,
+        height_in: data.height_inches,
+        mount_type: data.mount_type,
+      }).select().single();
+      if (error) throw error;
+      setLastSavedWindowId(inserted.id);
+      await loadWindows();
+      if (autoSaveRef.current) {
+        setVoiceState('idle');
+        setParsed(null);
+        setTranscript('');
+        showToastWithUndo(`✓ ${data.label} saved`);
+      } else {
+        setVoiceModalVisible(false);
+        showToast(`✓ ${data.label} added`);
+      }
+    } catch (e) { console.error('saveVoiceMeasurement', e); }
   };
 
   const startRecording = () => {
@@ -227,7 +275,11 @@ export default function RoomDetailScreen({ route, navigation }: any) {
           setVoiceState('error');
         } else {
           setParsed(data.parsed);
-          setVoiceState('confirm');
+          if (autoSaveRef.current) {
+            await saveVoiceMeasurement(data.parsed);
+          } else {
+            setVoiceState('confirm');
+          }
         }
       } catch (err: any) {
         setVoiceError(err.message || 'Something went wrong. Try again.');
@@ -238,31 +290,15 @@ export default function RoomDetailScreen({ route, navigation }: any) {
       setVoiceError(`Could not capture audio: ${e.error}. Try again or enter manually.`);
       setVoiceState('error');
     };
+    recognition.onend = () => {
+      setVoiceState(prev => prev === 'recording' ? 'processing' : prev);
+    };
     recognition.start();
     recognitionRef.current = recognition;
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-  };
-
-  const saveVoiceMeasurement = async () => {
-    if (!parsed || !dealer) return;
-    try {
-      await supabase.from('windows').insert({
-        room_id: roomId,
-        dealer_id: dealer.id,
-        label: parsed.label,
-        width_in: parsed.width_inches,
-        height_in: parsed.height_inches,
-        mount_type: parsed.mount_type,
-      });
-      await loadWindows();
-      setVoiceModalVisible(false);
-      showToast(`✓ ${parsed.label} added`);
-    } catch (e) { console.error('saveVoiceMeasurement', e); }
+    if (recognitionRef.current) recognitionRef.current.stop();
   };
 
   const editVoiceInManual = () => {
@@ -394,8 +430,6 @@ export default function RoomDetailScreen({ route, navigation }: any) {
     } catch (e) { console.error('deleteWindow', e); }
   };
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
-
   const quickApply = (windowId: string) => {
     if (!lastSelectionRef.current) return;
     setPendingSelection(lastSelectionRef.current);
@@ -447,7 +481,12 @@ export default function RoomDetailScreen({ route, navigation }: any) {
           <Text style={S.assigningText}>Applying selection...</Text>
         </View>
       )}
-      {toast ? <View style={S.toast}><Text style={S.toastText}>{toast}</Text></View> : null}
+
+      {toast ? (
+        <TouchableOpacity style={S.toast} onPress={toast.includes('Undo') ? undoLastSave : undefined}>
+          <Text style={S.toastText}>{toast}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <ScrollView
         contentContainerStyle={S.content}
@@ -556,6 +595,17 @@ export default function RoomDetailScreen({ route, navigation }: any) {
               <>
                 <Text style={S.voiceHint}>Say the window name and dimensions</Text>
                 <Text style={S.voiceExample}>"Living room left, 36 and a half wide by 48 tall, inside mount"</Text>
+
+                <TouchableOpacity
+                  style={[S.autoSaveToggle, autoSave && { backgroundColor: brandColor + '22', borderColor: brandColor }]}
+                  onPress={() => setAutoSave(prev => !prev)}
+                >
+                  <View style={[S.autoSaveIndicator, { backgroundColor: autoSave ? brandColor : 'rgba(255,255,255,0.2)' }]} />
+                  <Text style={[S.autoSaveText, autoSave && { color: 'white' }]}>
+                    {autoSave ? 'Auto-saving on' : 'Auto-save (skip confirm)'}
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity style={[S.micBtn, { backgroundColor: brandColor }]} onPress={startRecording}>
                   <Text style={S.micIcon}>🎙</Text>
                 </TouchableOpacity>
@@ -572,7 +622,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                 <TouchableOpacity style={[S.micBtn, S.micBtnRecording]} onPress={stopRecording}>
                   <Text style={S.micIcon}>⏹</Text>
                 </TouchableOpacity>
-                <Text style={S.micLabel}>Tap to stop</Text>
+                <Text style={S.micLabel}>Stop talking to submit</Text>
               </>
             )}
 
@@ -609,7 +659,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
                     <Text style={S.confirmFieldValue}>{parsed.mount_type === 'inside' ? 'Inside' : 'Outside'} Mount</Text>
                   </View>
                 </View>
-                <TouchableOpacity style={[S.saveBtn, { backgroundColor: brandColor }]} onPress={saveVoiceMeasurement}>
+                <TouchableOpacity style={[S.saveBtn, { backgroundColor: brandColor }]} onPress={() => saveVoiceMeasurement()}>
                   <Text style={S.saveBtnText}>Save Window</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={S.editBtn} onPress={editVoiceInManual}>
@@ -940,6 +990,9 @@ const S = StyleSheet.create({
   micLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
   manualLink: { color: 'rgba(255,255,255,0.35)', fontSize: 13, textDecorationLine: 'underline', marginTop: 4 },
   transcriptText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, fontStyle: 'italic', textAlign: 'center' },
+  autoSaveToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.05)' },
+  autoSaveIndicator: { width: 10, height: 10, borderRadius: 5 },
+  autoSaveText: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600' },
   confirmCard: { width: '100%', backgroundColor: '#0D1520', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
   confirmRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
   confirmDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 16 },

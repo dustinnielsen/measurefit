@@ -81,13 +81,7 @@ export default function RoomsScreen({ navigation }: any) {
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🏠</Text>
             <Text style={styles.emptyTitle}>No rooms yet</Text>
-            <Text style={styles.emptyDesc}>Scan a {tenantConfig.product_noun} to create your first room</Text>
-            <TouchableOpacity
-              style={[styles.emptyBtn, { backgroundColor: brandColor }]}
-              onPress={() => navigation.navigate('Scan')}
-            >
-              <Text style={styles.emptyBtnText}>Go to Scanner</Text>
-            </TouchableOpacity>
+            <Text style={styles.emptyDesc}>Create a room and add your first window measurement</Text>
           </View>
         }
         renderItem={({ item: room }) => {
@@ -120,13 +114,6 @@ export default function RoomsScreen({ navigation }: any) {
             </TouchableOpacity>
           );
         }}
-        ListFooterComponent={
-          rooms.length > 0 ? (
-            <TouchableOpacity style={styles.addRoomBtn} onPress={() => navigation.navigate('Scan')}>
-              <Text style={styles.addRoomText}>+ Scan New {tenantConfig.product_noun_plural.charAt(0).toUpperCase() + tenantConfig.product_noun_plural.slice(1)}</Text>
-            </TouchableOpacity>
-          ) : null
-        }
       />
     </View>
   );
@@ -165,13 +152,5 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyEmoji: { fontSize: 56 },
   emptyTitle: { color: 'white', fontSize: 20, fontWeight: '700' },
-  emptyDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 14 },
-  emptyBtn: { marginTop: 8, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
-  emptyBtnText: { color: 'white', fontWeight: '700', fontSize: 14 },
-  addRoomBtn: {
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-    borderStyle: 'dashed', borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center', marginTop: 4,
-  },
-  addRoomText: { color: 'rgba(255,255,255,0.5)', fontWeight: '600', fontSize: 14 },
+  emptyDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center' },
 });
