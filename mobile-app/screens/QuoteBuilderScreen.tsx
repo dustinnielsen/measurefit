@@ -1,7 +1,8 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Modal, Switch,
+  Dimensions,
 } from 'react-native';
 
 const Alert = {
@@ -22,21 +23,18 @@ import { usePlanGating } from '../hooks/usePlanGating';
 import { quotesService, customersService, roomsService, supabase } from '../lib/supabase';
 import type { Quote, Customer } from '../lib/supabase';
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
 const DEFAULT_MARKUP  = 40;
 const DEFAULT_INSTALL = 15;
 const API_BASE        = 'https://windowfit-production.up.railway.app';
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  unpaid:       'rgba(255,255,255,0.3)',
-  link_sent:    '#FF9F0A',
-  deposit_paid: '#30D158',
-  paid_in_full: '#30D158',
+  unpaid: 'rgba(255,255,255,0.3)', link_sent: '#FF9F0A',
+  deposit_paid: '#30D158', paid_in_full: '#30D158',
 };
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  unpaid:       'Unpaid',
-  link_sent:    'Link Sent',
-  deposit_paid: 'Deposit Paid ✓',
-  paid_in_full: 'Paid in Full ✓',
+  unpaid: 'Unpaid', link_sent: 'Link Sent',
+  deposit_paid: 'Deposit Paid ✓', paid_in_full: 'Paid in Full ✓',
 };
 
 interface PricingDefault { category: string; cost_multiplier: number; markup_percent: number; }
@@ -45,11 +43,63 @@ interface DealerPricing { defaults: PricingDefault[]; overrides: PricingOverride
 interface ParsedMeasurement { label: string; width_inches: number; height_inches: number; mount_type: 'inside' | 'outside'; error?: string; }
 type VoiceState = 'idle' | 'recording' | 'processing' | 'confirm' | 'error';
 
+// Fabric picker types
+interface Colorway { name: string; hex: string; }
+interface FabricCollection {
+  id: string; brand: string; product_type: string; collection_name: string;
+  light_control: 'light_filtering' | 'room_darkening' | 'solar_screen';
+  price_group: number; material: string; colorways: Colorway[];
+}
+type PickerStep = 'brand' | 'product_type' | 'light_control' | 'collection' | 'colorway';
+
+const BRAND_OPTIONS = [
+  { key: 'norman', label: 'Norman', badge: 'NWF' },
+  { key: 'hunter_douglas', label: 'Hunter Douglas', badge: 'HD' },
+];
+const PRODUCT_TYPE_OPTIONS = [
+  { key: 'roller_shade', label: 'Roller Shade', emoji: '🪟' },
+  { key: 'cellular', label: 'Cellular', emoji: '🔷' },
+  { key: 'roman', label: 'Roman Shade', emoji: '📋' },
+  { key: 'shutter', label: 'Shutter', emoji: '🏠' },
+  { key: 'blind', label: 'Blind', emoji: '🔲' },
+  { key: 'perfectsheer', label: 'PerfectSheer', emoji: '✨' },
+];
+const LIGHT_CONTROL_OPTIONS = [
+  { key: 'light_filtering', label: 'Light Filtering', color: '#FFD60A', desc: 'Softens light, maintains view' },
+  { key: 'room_darkening', label: 'Room Darkening', color: '#FF9F0A', desc: 'Blocks most incoming light' },
+  { key: 'solar_screen', label: 'Solar Screen', color: '#30D158', desc: 'UV protection, view-through' },
+];
+
+function gradeLabel(n: number) { return `Grade ${n}`; }
+function gradeColor(n: number) {
+  switch (n) {
+    case 1: return '#30D158'; case 2: return '#0A84FF';
+    case 3: return '#FF9F0A'; case 4: return '#FF453A';
+    default: return '#8E8E93';
+  }
+}
+function lightControlLabel(lc: string) {
+  switch (lc) {
+    case 'light_filtering': return 'Light Filtering';
+    case 'room_darkening': return 'Room Darkening';
+    case 'solar_screen': return 'Solar Screen';
+    default: return lc;
+  }
+}
+
+// Price per sq ft by grade (rough estimate for display)
+const GRADE_PRICE_PER_SQFT: Record<number, number> = { 1: 8, 2: 12, 3: 18, 4: 26 };
+
+function estimatePrice(widthIn: number, heightIn: number, priceGroup: number): number {
+  const sqft = (widthIn * heightIn) / 144;
+  return Math.round(sqft * (GRADE_PRICE_PER_SQFT[priceGroup] ?? 12) * 100);
+}
+
 function computeDealerPrice(product: any, pricing: DealerPricing) {
   const msrp = product.msrp_cents ?? product.base_price_cents ?? 0;
-  const override = pricing.overrides.find(o => o.product_id === product.id);
+  const override = pricing.overrides.find((o: any) => o.product_id === product.id);
   if (override?.custom_price_cents != null) return { dealerCostCents: override.custom_price_cents, quotePriceCents: override.custom_price_cents, markupPercent: 0 };
-  const categoryDefault = pricing.defaults.find(d => d.category === product.category);
+  const categoryDefault = pricing.defaults.find((d: any) => d.category === product.category);
   const costMultiplier = override?.cost_multiplier ?? categoryDefault?.cost_multiplier ?? 0.31;
   const markupPercent = override?.markup_percent ?? categoryDefault?.markup_percent ?? DEFAULT_MARKUP;
   const dealerCostCents = Math.round(msrp * costMultiplier);
@@ -92,7 +142,20 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const [installPercent, setInstallPercent] = useState(DEFAULT_INSTALL);
   const [itemMarkups, setItemMarkups] = useState<Record<string, number>>({});
 
-  const [showWindowPicker, setShowWindowPicker] = useState(false);
+  // Fabric picker state
+  const [fabricPickerVisible, setFabricPickerVisible] = useState(false);
+  const [targetLineItemId, setTargetLineItemId] = useState<string | null>(null);
+  const [targetWindowId, setTargetWindowId] = useState<string | null>(null);
+  const [targetWindowDims, setTargetWindowDims] = useState<{w: number, h: number}>({ w: 0, h: 0 });
+  const [fabricCollections, setFabricCollections] = useState<FabricCollection[]>([]);
+  const [collectionsLoading, setCollectionsLoading] = useState(false);
+  const [pickerStep, setPickerStep] = useState<PickerStep>('brand');
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
+  const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
+  const [selectedLightControl, setSelectedLightControl] = useState<string | null>(null);
+  const [selectedCollection, setSelectedCollection] = useState<FabricCollection | null>(null);
+  const [selectedColorway, setSelectedColorway] = useState<Colorway | null>(null);
+  const [fabricSearch, setFabricSearch] = useState('');
 
   // Voice measurement state
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
@@ -101,13 +164,11 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const [parsed, setParsed] = useState<ParsedMeasurement | null>(null);
   const [voiceError, setVoiceError] = useState('');
   const [autoSave, setAutoSave] = useState(false);
-  const [lastSavedWindowId, setLastSavedWindowId] = useState<string | null>(null);
   const [windowToast, setWindowToast] = useState('');
   const recognitionRef = useRef<any>(null);
   const autoSaveRef = useRef(false);
   autoSaveRef.current = autoSave;
 
-  // Manual entry state
   const [manualVisible, setManualVisible] = useState(false);
   const [manualLabel, setManualLabel] = useState('');
   const [manualWidth, setManualWidth] = useState('');
@@ -124,7 +185,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const init = async () => {
     if (!dealer) return;
     try {
-      const [custData] = await Promise.all([customersService.getCustomers(dealer.id)]);
+      const custData = await customersService.getCustomers(dealer.id);
       setCustomers(custData);
       if (quoteId) {
         const q = await quotesService.getQuote(quoteId);
@@ -147,82 +208,148 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       setDealerPricing({ defaults: json.defaults ?? [], overrides: json.overrides ?? [] });
       if (json.defaults?.length > 0) setGlobalMarkup(Math.round(json.defaults[0].markup_percent));
     } catch (e) {
-      console.warn('Could not load dealer pricing, using defaults:', e);
+      console.warn('Could not load dealer pricing:', e);
     } finally {
       setPricingLoaded(true);
     }
   };
 
-  // ── Get or create a default room for this quote ────────────────────────────
+  const loadCollections = async () => {
+    if (fabricCollections.length > 0) return;
+    setCollectionsLoading(true);
+    try {
+      const { data, error } = await supabase.from('fabric_collections').select('*').eq('is_active', true).order('price_group').order('collection_name');
+      if (error) throw error;
+      setFabricCollections(data ?? []);
+    } catch (e) { console.error('loadCollections', e); }
+    finally { setCollectionsLoading(false); }
+  };
+
+  const openFabricPicker = (lineItemId: string, windowId: string, widthIn: number, heightIn: number) => {
+    setTargetLineItemId(lineItemId);
+    setTargetWindowId(windowId);
+    setTargetWindowDims({ w: widthIn, h: heightIn });
+    setPickerStep('brand');
+    setSelectedBrand(null); setSelectedProductType(null);
+    setSelectedLightControl(null); setSelectedCollection(null);
+    setSelectedColorway(null); setFabricSearch('');
+    setFabricPickerVisible(true);
+    loadCollections();
+  };
+
+  const goBack = () => {
+    setFabricSearch('');
+    if (pickerStep === 'colorway') { setPickerStep('collection'); setSelectedColorway(null); return; }
+    if (pickerStep === 'collection') { setPickerStep('light_control'); setSelectedCollection(null); return; }
+    if (pickerStep === 'light_control') { setPickerStep('product_type'); setSelectedLightControl(null); return; }
+    if (pickerStep === 'product_type') { setPickerStep('brand'); setSelectedProductType(null); return; }
+    setFabricPickerVisible(false);
+  };
+
+  const collectionsForStep = useMemo(() =>
+    fabricCollections.filter(c => c.brand === selectedBrand && c.product_type === selectedProductType),
+    [fabricCollections, selectedBrand, selectedProductType]);
+
+  const searchResults = useMemo(() => {
+    if (!fabricSearch.trim() || !selectedBrand || !selectedProductType) return null;
+    const q = fabricSearch.toLowerCase();
+    const out: { collection: FabricCollection; colorway: Colorway }[] = [];
+    collectionsForStep.forEach(c => {
+      c.colorways.forEach(cw => {
+        if (c.collection_name.toLowerCase().includes(q) || cw.name.toLowerCase().includes(q))
+          out.push({ collection: c, colorway: cw });
+      });
+    });
+    return out;
+  }, [fabricSearch, collectionsForStep]);
+
+  const collectionsForLC = useMemo(() =>
+    collectionsForStep.filter(c => c.light_control === selectedLightControl),
+    [collectionsForStep, selectedLightControl]);
+
+  const assignFabricToLineItem = async (collection: FabricCollection, colorway: Colorway) => {
+    if (!targetLineItemId || !targetWindowId || !quote) return;
+    try {
+      // Update window with fabric
+      await supabase.from('windows').update({
+        fabric_collection_id: collection.id,
+        fabric_collection_name: collection.collection_name,
+        fabric_colorway_name: colorway.name,
+        fabric_colorway_hex: colorway.hex,
+        fabric_price_group: collection.price_group,
+      }).eq('id', targetWindowId);
+
+      // Estimate price based on dimensions and grade
+      const priceCents = estimatePrice(targetWindowDims.w, targetWindowDims.h, collection.price_group);
+
+      // Update line item description and price
+      await supabase.from('quote_line_items').update({
+        description: `${collection.collection_name} — ${colorway.name}`,
+        unit_price_cents: priceCents,
+      }).eq('id', targetLineItemId);
+
+      const updated = await quotesService.getQuote(quote.id);
+      setQuote(updated);
+      setFabricPickerVisible(false);
+      showWindowToast(`✓ ${collection.collection_name} assigned`);
+    } catch (e) { console.error('assignFabricToLineItem', e); }
+  };
+
+  const breadcrumb = () => {
+    const parts: string[] = [];
+    if (selectedBrand) parts.push(selectedBrand === 'norman' ? 'Norman' : 'Hunter Douglas');
+    if (selectedProductType) parts.push(PRODUCT_TYPE_OPTIONS.find(p => p.key === selectedProductType)?.label ?? '');
+    if (selectedLightControl) parts.push(lightControlLabel(selectedLightControl));
+    if (selectedCollection) parts.push(selectedCollection.collection_name);
+    return parts.join(' › ');
+  };
+
+  // ── Room/quote helpers ─────────────────────────────────────────────────────
   const getOrCreateQuoteRoom = async (): Promise<string> => {
     if (!dealer || !quote) throw new Error('No dealer or quote');
     const roomName = `Quote ${quote.quote_number ?? quoteId}`;
-    const { data: existing } = await supabase
-      .from('rooms')
-      .select('id')
-      .eq('dealer_id', dealer.id)
-      .eq('name', roomName)
-      .single();
+    const { data: existing } = await supabase.from('rooms').select('id').eq('dealer_id', dealer.id).eq('name', roomName).single();
     if (existing) return existing.id;
     const newRoom = await roomsService.createRoom({ dealer_id: dealer.id, name: roomName });
     return newRoom.id;
   };
 
-  // ── Save a new window and add as line item ─────────────────────────────────
   const saveWindowToQuote = async (data: ParsedMeasurement) => {
     if (!dealer || !quote) return;
     try {
       const roomId = await getOrCreateQuoteRoom();
       const { data: newWindow, error } = await supabase.from('windows').insert({
-        room_id: roomId,
-        dealer_id: dealer.id,
-        label: data.label,
-        width_in: data.width_inches,
-        height_in: data.height_inches,
-        mount_type: data.mount_type,
+        room_id: roomId, dealer_id: dealer.id,
+        label: data.label, width_in: data.width_inches,
+        height_in: data.height_inches, mount_type: data.mount_type,
       }).select().single();
       if (error) throw error;
-      setLastSavedWindowId(newWindow.id);
-
-      // Add as line item with no product (price 0, dealer can assign later)
       await quotesService.addLineItem(quote.id, {
-        window_id: newWindow.id,
-        product_id: null,
+        window_id: newWindow.id, product_id: null,
         description: data.label,
-        width_in: data.width_inches,
-        height_in: data.height_inches,
-        unit_price_cents: 0,
-        quantity: 1,
+        width_in: data.width_inches, height_in: data.height_inches,
+        unit_price_cents: 0, quantity: 1,
       });
-
       const updated = await quotesService.getQuote(quote.id);
       setQuote(updated);
       return newWindow.id;
     } catch (e) { console.error('saveWindowToQuote', e); }
   };
 
-  // ── Voice measurement ──────────────────────────────────────────────────────
+  // ── Voice ──────────────────────────────────────────────────────────────────
   const openVoiceModal = () => {
-    setVoiceState('idle');
-    setTranscript('');
-    setParsed(null);
-    setVoiceError('');
+    setVoiceState('idle'); setTranscript(''); setParsed(null); setVoiceError('');
     setVoiceModalVisible(true);
   };
 
-  const showWindowToast = (msg: string) => {
-    setWindowToast(msg);
-    setTimeout(() => setWindowToast(''), 3000);
-  };
+  const showWindowToast = (msg: string) => { setWindowToast(msg); setTimeout(() => setWindowToast(''), 3000); };
 
   const saveVoiceMeasurement = async (parsedData?: ParsedMeasurement) => {
     const data = parsedData ?? parsed;
     if (!data) return;
     await saveWindowToQuote(data);
     if (autoSaveRef.current) {
-      setVoiceState('idle');
-      setParsed(null);
-      setTranscript('');
+      setVoiceState('idle'); setParsed(null); setTranscript('');
       showWindowToast(`✓ ${data.label} added`);
       setTimeout(() => startRecording(), 1000);
     } else {
@@ -233,51 +360,23 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
   const startRecording = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceError('Voice input is not supported on this browser. Please enter manually.');
-      setVoiceState('error');
-      return;
-    }
+    if (!SpeechRecognition) { setVoiceError('Voice input not supported. Please enter manually.'); setVoiceState('error'); return; }
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
     recognition.onstart = () => { setVoiceState('recording'); };
     recognition.onresult = async (e: any) => {
       const text = e.results[0][0].transcript;
-      setTranscript(text);
-      setVoiceState('processing');
+      setTranscript(text); setVoiceState('processing');
       try {
-        const res = await fetch(`${API_BASE}/api/voice/parse`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript: text }),
-        });
+        const res = await fetch(`${API_BASE}/api/voice/parse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: text }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Server error');
-        if (data.parsed?.error) {
-          setVoiceError(`Couldn't parse: "${text}". Try again or enter manually.`);
-          setVoiceState('error');
-        } else {
-          setParsed(data.parsed);
-          if (autoSaveRef.current) {
-            await saveVoiceMeasurement(data.parsed);
-          } else {
-            setVoiceState('confirm');
-          }
-        }
-      } catch (err: any) {
-        setVoiceError(err.message || 'Something went wrong. Try again.');
-        setVoiceState('error');
-      }
+        if (data.parsed?.error) { setVoiceError(`Couldn't parse: "${text}". Try again or enter manually.`); setVoiceState('error'); }
+        else { setParsed(data.parsed); if (autoSaveRef.current) { await saveVoiceMeasurement(data.parsed); } else { setVoiceState('confirm'); } }
+      } catch (err: any) { setVoiceError(err.message || 'Something went wrong.'); setVoiceState('error'); }
     };
-    recognition.onerror = (e: any) => {
-      setVoiceError(`Could not capture audio: ${e.error}. Try again or enter manually.`);
-      setVoiceState('error');
-    };
-    recognition.onend = () => {
-      setVoiceState(prev => prev === 'recording' ? 'processing' : prev);
-    };
+    recognition.onerror = (e: any) => { setVoiceError(`Could not capture audio: ${e.error}.`); setVoiceState('error'); };
+    recognition.onend = () => { setVoiceState(prev => prev === 'recording' ? 'processing' : prev); };
     recognition.start();
     recognitionRef.current = recognition;
   };
@@ -286,33 +385,23 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
   const editVoiceInManual = () => {
     if (parsed) { setManualLabel(parsed.label); setManualWidth(String(parsed.width_inches)); setManualHeight(String(parsed.height_inches)); setManualMount(parsed.mount_type); }
-    setVoiceModalVisible(false);
-    setManualVisible(true);
+    setVoiceModalVisible(false); setManualVisible(true);
   };
 
-  const openManual = () => {
-    setManualLabel(''); setManualWidth(''); setManualHeight(''); setManualMount('inside');
-    setVoiceModalVisible(false);
-    setManualVisible(true);
-  };
+  const openManual = () => { setManualLabel(''); setManualWidth(''); setManualHeight(''); setManualMount('inside'); setVoiceModalVisible(false); setManualVisible(true); };
 
   const saveManual = async () => {
     if (!manualWidth || !manualHeight) return;
     setManualSaving(true);
     try {
-      await saveWindowToQuote({
-        label: manualLabel || 'Window',
-        width_inches: parseFloat(manualWidth),
-        height_inches: parseFloat(manualHeight),
-        mount_type: manualMount,
-      });
+      await saveWindowToQuote({ label: manualLabel || 'Window', width_inches: parseFloat(manualWidth), height_inches: parseFloat(manualHeight), mount_type: manualMount });
       setManualVisible(false);
       showWindowToast(`✓ ${manualLabel || 'Window'} added`);
     } catch (e) { console.error('saveManual', e); }
     finally { setManualSaving(false); }
   };
 
-  // ── Pricing helpers ────────────────────────────────────────────────────────
+  // ── Pricing ────────────────────────────────────────────────────────────────
   const getLineDealerCost = (item: any): number => item.unit_price_cents;
   const getItemMarkup = (itemId: string) => itemMarkups[itemId] ?? globalMarkup;
   const getQuotePrice = (item: any): number => Math.round(item.unit_price_cents * (1 + getItemMarkup(item.id ?? '') / 100));
@@ -331,39 +420,19 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
   const handleExportPDF = async () => {
     if (!quote) return;
-    setShowPDFOptions(false);
-    setExportingPDF(true);
+    setShowPDFOptions(false); setExportingPDF(true);
     try {
       const res = await fetch(`${API_BASE}/api/quotes/${quote.id}/pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dealerId: dealer?.id,
-          subtotalCents: computedSubtotal,
-          installCents: computedInstall,
-          totalCents: computedTotal,
-          showMeasurements,
-          showMarkup,
-          lineItems: lineItems.map((item: any) => ({
-            ...item,
-            quotePriceCents: getQuotePrice(item),
-            markupPercent: getItemMarkup(item.id ?? ''),
-          })),
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealerId: dealer?.id, subtotalCents: computedSubtotal, installCents: computedInstall, totalCents: computedTotal, showMeasurements, showMarkup, lineItems: lineItems.map((item: any) => ({ ...item, quotePriceCents: getQuotePrice(item), markupPercent: getItemMarkup(item.id ?? '') })) }),
       });
       if (!res.ok) throw new Error(`PDF generation failed: ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${quote.quote_number ?? 'quote'}.pdf`;
-      a.click();
+      const a = document.createElement('a'); a.href = url; a.download = `${quote.quote_number ?? 'quote'}.pdf`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      Alert.alert('Export failed', e.message ?? 'Could not generate PDF.');
-    } finally {
-      setExportingPDF(false);
-    }
+    } catch (e: any) { Alert.alert('Export failed', e.message ?? 'Could not generate PDF.'); }
+    finally { setExportingPDF(false); }
   };
 
   const handleCreateQuote = async () => {
@@ -373,32 +442,13 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
     try {
       let customerId = selectedCustomer?.id;
       if (isNewCustomer) {
-        const newCust = await customersService.createCustomer({
-          dealer_id: dealer.id,
-          first_name: newCustomerFirstName.trim(),
-          last_name: newCustomerLastName.trim(),
-          email: newCustomerEmail.trim() || undefined,
-          phone: newCustomerPhone.trim() || undefined,
-          address_line1: newCustomerAddress.trim() || undefined,
-          city: undefined, state: undefined, zip: undefined,
-        });
-        customerId = newCust.id;
-        setSelectedCustomer(newCust);
+        const newCust = await customersService.createCustomer({ dealer_id: dealer.id, first_name: newCustomerFirstName.trim(), last_name: newCustomerLastName.trim(), email: newCustomerEmail.trim() || undefined, phone: newCustomerPhone.trim() || undefined, address_line1: newCustomerAddress.trim() || undefined, city: undefined, state: undefined, zip: undefined });
+        customerId = newCust.id; setSelectedCustomer(newCust);
       }
-      const q = await quotesService.createQuote({
-        dealerId: dealer.id,
-        customerId: customerId!,
-        quoteNumber: '',
-        windows: [],
-        notes: notes.trim() || undefined,
-        installPercent,
-      });
+      const q = await quotesService.createQuote({ dealerId: dealer.id, customerId: customerId!, quoteNumber: '', windows: [], notes: notes.trim() || undefined, installPercent });
       setQuote(q);
-    } catch (e: any) {
-      Alert.alert('Failed to create quote', e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { Alert.alert('Failed to create quote', e.message); }
+    finally { setSaving(false); }
   };
 
   const handleRemoveLineItem = async (lineItemId: string) => {
@@ -409,11 +459,8 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       const updated = await quotesService.getQuote(quote.id);
       setQuote(updated);
       setItemMarkups(prev => { const n = { ...prev }; delete n[lineItemId]; return n; });
-    } catch (e: any) {
-      Alert.alert('Failed to remove item', e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { Alert.alert('Failed to remove item', e.message); }
+    finally { setSaving(false); }
   };
 
   const handleSend = async () => {
@@ -423,36 +470,24 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       await quotesService.sendQuote(quote.id);
       const updated = await quotesService.getQuote(quote.id);
       setQuote(updated);
-    } catch (e: any) {
-      Alert.alert('Failed to send', e.message);
-    } finally {
-      setSending(false);
-    }
+    } catch (e: any) { Alert.alert('Failed to send', e.message); }
+    finally { setSending(false); }
   };
 
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const PDFButton = ({ full = false }: { full?: boolean }) => (
-    <TouchableOpacity
-      style={[styles.pdfBtn, full && styles.pdfBtnFull, canExportPDF ? { borderColor: brandColor + '66', backgroundColor: brandColor + '18' } : styles.pdfBtnLocked]}
-      onPress={openPDFOptions}
-      disabled={exportingPDF}
-    >
-      {exportingPDF
-        ? <ActivityIndicator color={canExportPDF ? brandColor : 'rgba(255,255,255,0.3)'} size="small" />
-        : <View style={styles.pdfBtnInner}>
-            <Text style={[styles.pdfBtnText, { color: canExportPDF ? brandColor : 'rgba(255,255,255,0.35)' }]}>
-              {canExportPDF ? '📄 Export PDF' : '🔒 Export PDF'}
-            </Text>
-            {!canExportPDF && <View style={styles.pdfProPill}><Text style={styles.pdfProPillText}>PRO</Text></View>}
-          </View>
+    <TouchableOpacity style={[styles.pdfBtn, full && styles.pdfBtnFull, canExportPDF ? { borderColor: brandColor + '66', backgroundColor: brandColor + '18' } : styles.pdfBtnLocked]} onPress={openPDFOptions} disabled={exportingPDF}>
+      {exportingPDF ? <ActivityIndicator color={canExportPDF ? brandColor : 'rgba(255,255,255,0.3)'} size="small" /> :
+        <View style={styles.pdfBtnInner}>
+          <Text style={[styles.pdfBtnText, { color: canExportPDF ? brandColor : 'rgba(255,255,255,0.35)' }]}>{canExportPDF ? '📄 Export PDF' : '🔒 Export PDF'}</Text>
+          {!canExportPDF && <View style={styles.pdfProPill}><Text style={styles.pdfProPillText}>PRO</Text></View>}
+        </View>
       }
     </TouchableOpacity>
   );
 
-  if (loading) {
-    return <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>;
-  }
+  if (loading) return <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View>;
 
   return (
     <View style={styles.container}>
@@ -483,18 +518,12 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
           </View>
           <View style={styles.optionsBody}>
             <View style={styles.optionRow}>
-              <View style={styles.optionRowText}>
-                <Text style={styles.optionRowTitle}>Show measurements</Text>
-                <Text style={styles.optionRowDesc}>Display width × height on each line item</Text>
-              </View>
+              <View style={styles.optionRowText}><Text style={styles.optionRowTitle}>Show measurements</Text><Text style={styles.optionRowDesc}>Display width × height on each line item</Text></View>
               <Switch value={showMeasurements} onValueChange={setShowMeasurements} trackColor={{ false: 'rgba(255,255,255,0.1)', true: brandColor + '88' }} thumbColor={showMeasurements ? brandColor : 'rgba(255,255,255,0.4)'} />
             </View>
             <View style={styles.optionDivider} />
             <View style={styles.optionRow}>
-              <View style={styles.optionRowText}>
-                <Text style={styles.optionRowTitle}>Show markup %</Text>
-                <Text style={styles.optionRowDesc}>Display markup percentage next to each price</Text>
-              </View>
+              <View style={styles.optionRowText}><Text style={styles.optionRowTitle}>Show markup %</Text><Text style={styles.optionRowDesc}>Display markup percentage next to each price</Text></View>
               <Switch value={showMarkup} onValueChange={setShowMarkup} trackColor={{ false: 'rgba(255,255,255,0.1)', true: brandColor + '88' }} thumbColor={showMarkup ? brandColor : 'rgba(255,255,255,0.4)'} />
             </View>
             <TouchableOpacity style={[styles.generateBtn, { backgroundColor: brandColor }]} onPress={handleExportPDF}>
@@ -509,39 +538,26 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Measure Window</Text>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setVoiceModalVisible(false)}>
-              <Text style={styles.modalCloseText}>✕</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setVoiceModalVisible(false)}><Text style={styles.modalCloseText}>✕</Text></TouchableOpacity>
           </View>
           <View style={styles.voiceContent}>
             {voiceState === 'idle' && (
               <>
                 <Text style={styles.voiceHint}>Say the window name and dimensions</Text>
                 <Text style={styles.voiceExample}>"Master center, 36 and a half wide by 48 tall, inside mount"</Text>
-                <TouchableOpacity
-                  style={[styles.autoSaveToggle, autoSave && { backgroundColor: brandColor + '22', borderColor: brandColor }]}
-                  onPress={() => setAutoSave(prev => !prev)}
-                >
+                <TouchableOpacity style={[styles.autoSaveToggle, autoSave && { backgroundColor: brandColor + '22', borderColor: brandColor }]} onPress={() => setAutoSave(prev => !prev)}>
                   <View style={[styles.autoSaveIndicator, { backgroundColor: autoSave ? brandColor : 'rgba(255,255,255,0.2)' }]} />
-                  <Text style={[styles.autoSaveText, autoSave && { color: 'white' }]}>
-                    {autoSave ? 'Auto-saving on' : 'Auto-save (skip confirm)'}
-                  </Text>
+                  <Text style={[styles.autoSaveText, autoSave && { color: 'white' }]}>{autoSave ? 'Auto-saving on' : 'Auto-save (skip confirm)'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.micBtn, { backgroundColor: brandColor }]} onPress={startRecording}>
-                  <Text style={styles.micIcon}>🎙</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.micBtn, { backgroundColor: brandColor }]} onPress={startRecording}><Text style={styles.micIcon}>🎙</Text></TouchableOpacity>
                 <Text style={styles.micLabel}>Tap to speak</Text>
-                <TouchableOpacity onPress={openManual}>
-                  <Text style={styles.manualLink}>Enter manually instead</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={openManual}><Text style={styles.manualLink}>Enter manually instead</Text></TouchableOpacity>
               </>
             )}
             {voiceState === 'recording' && (
               <>
                 <Text style={styles.voiceHint}>Listening...</Text>
-                <TouchableOpacity style={[styles.micBtn, styles.micBtnRecording]} onPress={stopRecording}>
-                  <Text style={styles.micIcon}>⏹</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.micBtn, styles.micBtnRecording]} onPress={stopRecording}><Text style={styles.micIcon}>⏹</Text></TouchableOpacity>
                 <Text style={styles.micLabel}>Stop talking to submit</Text>
               </>
             )}
@@ -565,27 +581,17 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
                   <View style={styles.confirmDivider} />
                   <View style={styles.confirmRow}><Text style={styles.confirmFieldLabel}>MOUNT</Text><Text style={styles.confirmFieldValue}>{parsed.mount_type === 'inside' ? 'Inside' : 'Outside'} Mount</Text></View>
                 </View>
-                <TouchableOpacity style={[styles.saveBtn, { backgroundColor: brandColor }]} onPress={() => saveVoiceMeasurement()}>
-                  <Text style={styles.saveBtnText}>Add to Quote</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.editBtn} onPress={editVoiceInManual}>
-                  <Text style={styles.editBtnText}>Edit before saving</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setVoiceState('idle')} style={{ marginTop: 8 }}>
-                  <Text style={styles.manualLink}>Try again</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.saveBtn, { backgroundColor: brandColor }]} onPress={() => saveVoiceMeasurement()}><Text style={styles.saveBtnText}>Add to Quote</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.editBtn} onPress={editVoiceInManual}><Text style={styles.editBtnText}>Edit before saving</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => setVoiceState('idle')} style={{ marginTop: 8 }}><Text style={styles.manualLink}>Try again</Text></TouchableOpacity>
               </>
             )}
             {voiceState === 'error' && (
               <>
                 <Text style={styles.voiceError}>{voiceError}</Text>
-                <TouchableOpacity style={[styles.micBtn, { backgroundColor: brandColor }]} onPress={() => setVoiceState('idle')}>
-                  <Text style={styles.micIcon}>🎙</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.micBtn, { backgroundColor: brandColor }]} onPress={() => setVoiceState('idle')}><Text style={styles.micIcon}>🎙</Text></TouchableOpacity>
                 <Text style={styles.micLabel}>Try again</Text>
-                <TouchableOpacity onPress={openManual}>
-                  <Text style={styles.manualLink}>Enter manually instead</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={openManual}><Text style={styles.manualLink}>Enter manually instead</Text></TouchableOpacity>
               </>
             )}
           </View>
@@ -597,9 +603,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Enter Manually</Text>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setManualVisible(false)}>
-              <Text style={styles.modalCloseText}>✕</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setManualVisible(false)}><Text style={styles.modalCloseText}>✕</Text></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
             <View>
@@ -619,30 +623,158 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
             <View>
               <Text style={styles.fieldLabel}>MOUNT TYPE</Text>
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity style={[styles.mountToggle, manualMount === 'inside' && { backgroundColor: brandColor, borderColor: brandColor }]} onPress={() => setManualMount('inside')}>
-                  <Text style={[styles.mountToggleText, manualMount === 'inside' && { color: 'white' }]}>Inside</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.mountToggle, manualMount === 'outside' && { backgroundColor: brandColor, borderColor: brandColor }]} onPress={() => setManualMount('outside')}>
-                  <Text style={[styles.mountToggleText, manualMount === 'outside' && { color: 'white' }]}>Outside</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.mountToggle, manualMount === 'inside' && { backgroundColor: brandColor, borderColor: brandColor }]} onPress={() => setManualMount('inside')}><Text style={[styles.mountToggleText, manualMount === 'inside' && { color: 'white' }]}>Inside</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.mountToggle, manualMount === 'outside' && { backgroundColor: brandColor, borderColor: brandColor }]} onPress={() => setManualMount('outside')}><Text style={[styles.mountToggleText, manualMount === 'outside' && { color: 'white' }]}>Outside</Text></TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: (!manualWidth || !manualHeight) ? 'rgba(255,255,255,0.1)' : brandColor, marginTop: 8 }]}
-              onPress={saveManual}
-              disabled={!manualWidth || !manualHeight || manualSaving}
-            >
+            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: (!manualWidth || !manualHeight) ? 'rgba(255,255,255,0.1)' : brandColor, marginTop: 8 }]} onPress={saveManual} disabled={!manualWidth || !manualHeight || manualSaving}>
               {manualSaving ? <ActivityIndicator color="white" /> : <Text style={styles.saveBtnText}>Add to Quote</Text>}
             </TouchableOpacity>
           </ScrollView>
         </View>
       </Modal>
 
+      {/* Fabric Picker Modal */}
+      <Modal visible={fabricPickerVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              {pickerStep !== 'brand' && (
+                <TouchableOpacity onPress={goBack} style={{ marginBottom: 4 }}>
+                  <Text style={[styles.backChevronText, { color: brandColor }]}>← Back</Text>
+                </TouchableOpacity>
+              )}
+              <Text style={styles.modalTitle}>
+                {pickerStep === 'brand' ? 'Select Brand' : pickerStep === 'product_type' ? 'Product Type' :
+                 pickerStep === 'light_control' ? 'Light Control' : pickerStep === 'collection' ? 'Select Collection' : 'Select Colorway'}
+              </Text>
+              {breadcrumb() ? <Text style={styles.breadcrumb} numberOfLines={1}>{breadcrumb()}</Text> : null}
+            </View>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setFabricPickerVisible(false)}><Text style={styles.modalCloseText}>✕</Text></TouchableOpacity>
+          </View>
+          {pickerStep !== 'brand' && (
+            <View style={styles.searchWrap}>
+              <TextInput value={fabricSearch} onChangeText={setFabricSearch} placeholder="Search collection or colorway..." placeholderTextColor="rgba(255,255,255,0.25)" style={styles.searchInput} />
+            </View>
+          )}
+          {collectionsLoading ? <View style={styles.centered}><ActivityIndicator color={brandColor} size="large" /></View> : (
+            <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+              {fabricSearch.trim().length > 0 && searchResults !== null && (
+                <>
+                  <Text style={styles.sectionLabel}>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</Text>
+                  {searchResults.length === 0
+                    ? <Text style={styles.emptyText}>No results</Text>
+                    : searchResults.map((r, i) => (
+                        <TouchableOpacity key={`${r.collection.id}-${r.colorway.name}-${i}`} style={styles.searchResultRow} onPress={() => assignFabricToLineItem(r.collection, r.colorway)}>
+                          <View style={[styles.searchSwatch, { backgroundColor: r.colorway.hex }]} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.searchResultName}>{r.collection.collection_name} — {r.colorway.name}</Text>
+                            <Text style={styles.searchResultMeta}>{lightControlLabel(r.collection.light_control)} · {gradeLabel(r.collection.price_group)}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))
+                  }
+                </>
+              )}
+              {pickerStep === 'brand' && !fabricSearch.trim() && (
+                <>
+                  <Text style={styles.sectionLabel}>WHO MAKES IT?</Text>
+                  {BRAND_OPTIONS.map(b => (
+                    <TouchableOpacity key={b.key} style={styles.stepCard} onPress={() => { setSelectedBrand(b.key); setPickerStep('product_type'); }}>
+                      <View style={[styles.stepBadge, b.key === 'hunter_douglas' && styles.stepBadgeHD]}><Text style={styles.stepBadgeText}>{b.badge}</Text></View>
+                      <Text style={styles.stepCardLabel}>{b.label}</Text>
+                      <Text style={styles.chevron}>›</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+              {pickerStep === 'product_type' && !fabricSearch.trim() && (
+                <>
+                  <Text style={styles.sectionLabel}>WHAT TYPE?</Text>
+                  {PRODUCT_TYPE_OPTIONS.map(pt => {
+                    const has = fabricCollections.some(c => c.brand === selectedBrand && c.product_type === pt.key);
+                    return (
+                      <TouchableOpacity key={pt.key} style={[styles.stepCard, !has && styles.stepCardDisabled]} onPress={() => { if (!has) return; setSelectedProductType(pt.key); setPickerStep('light_control'); }}>
+                        <Text style={{ fontSize: 24, width: 36, textAlign: 'center' }}>{pt.emoji}</Text>
+                        <Text style={[styles.stepCardLabel, !has && { color: 'rgba(255,255,255,0.3)' }]}>{pt.label}</Text>
+                        {!has ? <Text style={styles.comingSoon}>Coming soon</Text> : <Text style={styles.chevron}>›</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+              {pickerStep === 'light_control' && !fabricSearch.trim() && (
+                <>
+                  <Text style={styles.sectionLabel}>LIGHT CONTROL</Text>
+                  {LIGHT_CONTROL_OPTIONS.map(lc => {
+                    const count = collectionsForStep.filter(c => c.light_control === lc.key).length;
+                    if (count === 0) return null;
+                    return (
+                      <TouchableOpacity key={lc.key} style={styles.lcCard} onPress={() => { setSelectedLightControl(lc.key); setPickerStep('collection'); }}>
+                        <View style={[styles.lcDot, { backgroundColor: lc.color }]} />
+                        <View style={{ flex: 1 }}><Text style={styles.lcLabel}>{lc.label}</Text><Text style={styles.lcDesc}>{lc.desc}</Text></View>
+                        <Text style={styles.lcCount}>{count} collections</Text>
+                        <Text style={styles.chevron}>›</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+              {pickerStep === 'collection' && !fabricSearch.trim() && (
+                <>
+                  <Text style={styles.sectionLabel}>{collectionsForLC.length} COLLECTIONS</Text>
+                  {collectionsForLC.map(c => (
+                    <TouchableOpacity key={c.id} style={styles.collectionCard} onPress={() => { setSelectedCollection(c); setSelectedColorway(null); setPickerStep('colorway'); }}>
+                      <View style={styles.swatchStrip}>{c.colorways.slice(0, 12).map((cw, i) => <View key={i} style={[styles.stripSwatch, { backgroundColor: cw.hex }]} />)}</View>
+                      <View style={styles.collectionBody}>
+                        <View style={{ flex: 1 }}><Text style={styles.collectionName}>{c.collection_name}</Text><Text style={styles.collectionMat} numberOfLines={1}>{c.material}</Text></View>
+                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                          <View style={[styles.gradeBadge, { backgroundColor: gradeColor(c.price_group) + '22' }]}><Text style={[styles.gradeBadgeText, { color: gradeColor(c.price_group) }]}>{gradeLabel(c.price_group)}</Text></View>
+                          <Text style={styles.colorCount}>{c.colorways.length} colors ›</Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+              {pickerStep === 'colorway' && selectedCollection && !fabricSearch.trim() && (
+                <>
+                  <Text style={styles.sectionLabel}>{selectedCollection.colorways.length} COLORWAYS · {gradeLabel(selectedCollection.price_group)}</Text>
+                  {targetWindowDims.w > 0 && (
+                    <View style={styles.priceEstimate}>
+                      <Text style={styles.priceEstimateText}>
+                        Est. quote price: ~${(estimatePrice(targetWindowDims.w, targetWindowDims.h, selectedCollection.price_group) / 100).toFixed(0)}
+                      </Text>
+                    </View>
+                  )}
+                  {selectedCollection.colorways.map(cw => (
+                    <TouchableOpacity key={cw.name} style={[styles.colorwayRow, selectedColorway?.name === cw.name && styles.colorwayRowActive]} onPress={() => setSelectedColorway(cw)}>
+                      <View style={[styles.colorwaySquare, { backgroundColor: cw.hex }]} />
+                      <Text style={styles.colorwayName}>{cw.name}</Text>
+                      {selectedColorway?.name === cw.name && <Text style={{ color: '#30D158', fontSize: 20 }}>✓</Text>}
+                    </TouchableOpacity>
+                  ))}
+                  <View style={{ height: 16 }} />
+                  {selectedColorway && (
+                    <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: brandColor }]} onPress={() => assignFabricToLineItem(selectedCollection, selectedColorway)}>
+                      <View style={[styles.confirmSwatch, { backgroundColor: selectedColorway.hex }]} />
+                      <Text style={styles.confirmBtnText}>Use {selectedCollection.collection_name} — {selectedColorway.name}</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.skipBtn} onPress={() => { const fb = selectedCollection.colorways[0]; if (fb) assignFabricToLineItem(selectedCollection, fb); }}>
+                    <Text style={styles.skipBtnText}>Select Without Specific Color</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              <View style={{ height: 60 }} />
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backIcon}>‹</Text>
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}><Text style={styles.backIcon}>‹</Text></TouchableOpacity>
         <Text style={styles.headerTitle}>{quote ? quote.quote_number : 'New Quote'}</Text>
         {quote && (
           <View style={[styles.statusBadge, { backgroundColor: quote.status === 'sent' ? brandColor + '26' : 'rgba(255,255,255,0.08)', borderColor: quote.status === 'sent' ? brandColor : 'rgba(255,255,255,0.15)' }]}>
@@ -655,26 +787,19 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
       <ScrollView contentContainerStyle={styles.content}>
 
-        {/* Customer section */}
+        {/* Customer */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Customer</Text>
           {selectedCustomer && !isNewCustomer ? (
             <View style={[styles.selectedCustomer, { borderColor: brandColor + '4D' }]}>
-              <View>
-                <Text style={styles.selectedCustomerName}>{customerFullName(selectedCustomer)}</Text>
-                <Text style={styles.selectedCustomerSub}>{selectedCustomer.email ?? selectedCustomer.phone ?? ''}</Text>
-              </View>
+              <View><Text style={styles.selectedCustomerName}>{customerFullName(selectedCustomer)}</Text><Text style={styles.selectedCustomerSub}>{selectedCustomer.email ?? selectedCustomer.phone ?? ''}</Text></View>
               {!quote && <TouchableOpacity onPress={() => setSelectedCustomer(null)}><Text style={[styles.changeText, { color: brandColor }]}>Change</Text></TouchableOpacity>}
             </View>
           ) : !quote ? (
             <View style={styles.section}>
               <View style={styles.tabRow}>
-                <TouchableOpacity style={[styles.tab, !isNewCustomer && { backgroundColor: brandColor + '26', borderWidth: 1, borderColor: brandColor }]} onPress={() => setIsNewCustomer(false)}>
-                  <Text style={[styles.tabText, !isNewCustomer && { color: brandColor }]}>Existing</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.tab, isNewCustomer && { backgroundColor: brandColor + '26', borderWidth: 1, borderColor: brandColor }]} onPress={() => setIsNewCustomer(true)}>
-                  <Text style={[styles.tabText, isNewCustomer && { color: brandColor }]}>New Customer</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.tab, !isNewCustomer && { backgroundColor: brandColor + '26', borderWidth: 1, borderColor: brandColor }]} onPress={() => setIsNewCustomer(false)}><Text style={[styles.tabText, !isNewCustomer && { color: brandColor }]}>Existing</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.tab, isNewCustomer && { backgroundColor: brandColor + '26', borderWidth: 1, borderColor: brandColor }]} onPress={() => setIsNewCustomer(true)}><Text style={[styles.tabText, isNewCustomer && { color: brandColor }]}>New Customer</Text></TouchableOpacity>
               </View>
               {!isNewCustomer ? (
                 <View>
@@ -689,10 +814,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
               ) : (
                 <View style={styles.formFields}>
                   {([['First Name *', newCustomerFirstName, setNewCustomerFirstName], ['Last Name', newCustomerLastName, setNewCustomerLastName], ['Email', newCustomerEmail, setNewCustomerEmail], ['Phone', newCustomerPhone, setNewCustomerPhone], ['Address', newCustomerAddress, setNewCustomerAddress]] as const).map(([label, value, setter]: any) => (
-                    <View key={label}>
-                      <Text style={styles.fieldLabel}>{label}</Text>
-                      <TextInput value={value} onChangeText={setter} style={styles.textInput} placeholderTextColor="rgba(255,255,255,0.25)" placeholder={label} />
-                    </View>
+                    <View key={label}><Text style={styles.fieldLabel}>{label}</Text><TextInput value={value} onChangeText={setter} style={styles.textInput} placeholderTextColor="rgba(255,255,255,0.25)" placeholder={label} /></View>
                   ))}
                 </View>
               )}
@@ -700,7 +822,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
           ) : null}
         </View>
 
-        {/* Windows section */}
+        {/* Windows */}
         {quote && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
@@ -726,27 +848,26 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
                   <View key={itemId} style={styles.lineItem}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.lineItemName}>{item.product_name ?? item.description ?? cap(tenantConfig.product_noun)}</Text>
-                      {item.width_in && item.height_in && (
-                        <Text style={styles.lineItemSub}>{item.width_in}" × {item.height_in}"</Text>
-                      )}
-                      {!hasProduct && (
-                        <Text style={styles.noProductHint}>No product assigned · $0</Text>
-                      )}
-                      {hasProduct && (
+                      {item.width_in && item.height_in && <Text style={styles.lineItemSub}>{item.width_in}" × {item.height_in}"</Text>}
+                      {!hasProduct ? (
+                        <TouchableOpacity
+                          style={styles.assignProductBtn}
+                          onPress={() => openFabricPicker(itemId, item.window_id, item.width_in ?? 0, item.height_in ?? 0)}
+                        >
+                          <Text style={[styles.assignProductBtnText, { color: brandColor }]}>+ Assign Product</Text>
+                        </TouchableOpacity>
+                      ) : (
                         <View style={styles.itemMarginRow}>
                           <Text style={styles.itemMarginLabel}>Markup:</Text>
-                          <TouchableOpacity style={styles.itemMarginBtn} onPress={() => setItemMarkups(p => ({ ...p, [itemId]: Math.max(0, markup - 5) }))}>
-                            <Text style={styles.marginBtnText}>−</Text>
-                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.itemMarginBtn} onPress={() => setItemMarkups(p => ({ ...p, [itemId]: Math.max(0, markup - 5) }))}><Text style={styles.marginBtnText}>−</Text></TouchableOpacity>
                           <Text style={[styles.itemMarginVal, { color: brandColor }]}>{markup}%</Text>
-                          <TouchableOpacity style={styles.itemMarginBtn} onPress={() => setItemMarkups(p => ({ ...p, [itemId]: Math.min(200, markup + 5) }))}>
-                            <Text style={styles.marginBtnText}>+</Text>
+                          <TouchableOpacity style={styles.itemMarginBtn} onPress={() => setItemMarkups(p => ({ ...p, [itemId]: Math.min(200, markup + 5) }))}><Text style={styles.marginBtnText}>+</Text></TouchableOpacity>
+                          <TouchableOpacity onPress={() => openFabricPicker(itemId, item.window_id, item.width_in ?? 0, item.height_in ?? 0)}>
+                            <Text style={[styles.changeProductText, { color: brandColor }]}>change</Text>
                           </TouchableOpacity>
                         </View>
                       )}
-                      <TouchableOpacity onPress={() => handleRemoveLineItem(itemId)}>
-                        <Text style={styles.removeText}>remove</Text>
-                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleRemoveLineItem(itemId)}><Text style={styles.removeText}>remove</Text></TouchableOpacity>
                     </View>
                     <View style={styles.lineItemPriceCol}>
                       <Text style={styles.lineItemPrice}>{hasProduct ? `$${(quotePriceCents / 100).toFixed(0)}` : '—'}</Text>
@@ -759,7 +880,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
           </View>
         )}
 
-        {/* Markup / Install controls */}
+        {/* Markup / Install */}
         {quote && lineItems.some((i: any) => i.unit_price_cents > 0) && (
           <View style={styles.marginCard}>
             <View style={styles.marginRow}>
@@ -846,7 +967,6 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
             })()}
           </>
         )}
-
       </ScrollView>
     </View>
   );
@@ -891,7 +1011,9 @@ const styles = StyleSheet.create({
   lineItemPriceCol: { alignItems: 'flex-end', justifyContent: 'flex-start', marginLeft: 12 },
   lineItemPrice: { color: 'white', fontWeight: '700', fontSize: 15 },
   lineItemBase: { color: 'rgba(255,255,255,0.25)', fontSize: 10, marginTop: 2 },
-  noProductHint: { color: 'rgba(255,165,0,0.7)', fontSize: 11, marginTop: 3 },
+  assignProductBtn: { marginTop: 6, paddingVertical: 4 },
+  assignProductBtnText: { fontSize: 12, fontWeight: '700' },
+  changeProductText: { fontSize: 11, fontWeight: '600', marginLeft: 4 },
   itemMarginRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   itemMarginLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
   itemMarginBtn: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
@@ -976,4 +1098,48 @@ const styles = StyleSheet.create({
   paymentBtn: { borderRadius: 14, paddingVertical: 16, paddingHorizontal: 18, borderWidth: 1, alignItems: 'center', gap: 4 },
   paymentBtnText: { fontWeight: '700', fontSize: 15 },
   paymentBtnSub: { fontSize: 12, fontWeight: '500' },
+  // Fabric picker styles
+  searchWrap: { padding: 16, paddingBottom: 4 },
+  searchInput: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 15, padding: 12 },
+  backChevronText: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  breadcrumb: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 },
+  sectionLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
+  emptyText: { color: 'rgba(255,255,255,0.3)', textAlign: 'center', paddingVertical: 24, fontSize: 14 },
+  stepCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#111827', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  stepCardDisabled: { opacity: 0.4 },
+  stepBadge: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(48,209,88,0.15)', alignItems: 'center', justifyContent: 'center' },
+  stepBadgeHD: { backgroundColor: 'rgba(10,132,255,0.15)' },
+  stepBadgeText: { color: 'white', fontSize: 10, fontWeight: '800' },
+  stepCardLabel: { flex: 1, color: 'white', fontSize: 16, fontWeight: '700' },
+  chevron: { color: 'rgba(255,255,255,0.3)', fontSize: 20 },
+  comingSoon: { color: 'rgba(255,255,255,0.25)', fontSize: 11, fontWeight: '600' },
+  lcCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#111827', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  lcDot: { width: 14, height: 14, borderRadius: 7, flexShrink: 0 },
+  lcLabel: { color: 'white', fontSize: 15, fontWeight: '700' },
+  lcDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
+  lcCount: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
+  collectionCard: { backgroundColor: '#111827', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
+  swatchStrip: { flexDirection: 'row', height: 10 },
+  stripSwatch: { flex: 1 },
+  collectionBody: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
+  collectionName: { color: 'white', fontSize: 15, fontWeight: '700' },
+  collectionMat: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 },
+  colorCount: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
+  gradeBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  gradeBadgeText: { fontSize: 10, fontWeight: '700' },
+  colorwayRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  colorwayRowActive: { borderColor: '#30D158', backgroundColor: 'rgba(48,209,88,0.08)' },
+  colorwaySquare: { width: 36, height: 36, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', flexShrink: 0 },
+  colorwayName: { flex: 1, color: 'white', fontSize: 15, fontWeight: '600' },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 14, paddingVertical: 15 },
+  confirmSwatch: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  confirmBtnText: { color: 'white', fontWeight: '700', fontSize: 15 },
+  skipBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
+  skipBtnText: { color: 'rgba(255,255,255,0.5)', fontWeight: '600', fontSize: 14 },
+  searchResultRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#111827', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  searchSwatch: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', flexShrink: 0 },
+  searchResultName: { color: 'white', fontSize: 14, fontWeight: '600' },
+  searchResultMeta: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 },
+  priceEstimate: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 10, alignItems: 'center' },
+  priceEstimateText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' },
 });
