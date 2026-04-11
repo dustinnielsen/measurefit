@@ -452,7 +452,7 @@ if (q.status === 'sent' || q.status === 'viewed') {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: '100vh', backgroundColor: '#080C14' },
+  page: { minHeight: '100vh', backgroundColor: '#0A0F1A' },
   centered: {
     minHeight: '100vh', display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12,
@@ -488,7 +488,7 @@ const styles: Record<string, React.CSSProperties> = {
   poweredBy: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 },
   container: { maxWidth: 480, margin: '0 auto', padding: '20px 20px 60px' },
   quoteInfoCard: {
-    backgroundColor: '#0D1520', borderRadius: 16,
+    backgroundColor: '#111827', borderRadius: 16,
     border: '1px solid rgba(255,255,255,0.07)',
     padding: 16, marginBottom: 20,
   },
@@ -514,7 +514,7 @@ const styles: Record<string, React.CSSProperties> = {
   lineItemSub: { color: 'rgba(255,255,255,0.35)', fontSize: 12, marginBottom: 2 },
   lineItemPrice: { color: 'white', fontWeight: 700, fontSize: 16, marginLeft: 16 },
   totalsCard: {
-    backgroundColor: '#0D1520', borderRadius: 16,
+    backgroundColor: '#111827', borderRadius: 16,
     border: '1px solid rgba(255,255,255,0.07)',
     padding: 16, marginBottom: 20,
   },
@@ -557,7 +557,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'white', fontSize: 14, lineHeight: 1.6, resize: 'vertical',
   },
   contactCard: {
-    backgroundColor: '#0D1520', borderRadius: 14,
+    backgroundColor: '#111827', borderRadius: 14,
     border: '1px solid rgba(255,255,255,0.07)',
     padding: 16, marginBottom: 20,
   },

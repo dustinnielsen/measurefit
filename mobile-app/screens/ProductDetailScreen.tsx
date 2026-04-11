@@ -147,8 +147,8 @@ function categoryEmoji(cat: string) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080C14' },
-  centered: { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  container: { flex: 1, backgroundColor: '#0A0F1A' },
+  centered: { flex: 1, backgroundColor: '#0A0F1A', alignItems: 'center', justifyContent: 'center', gap: 12 },
   notFound: { color: 'rgba(255,255,255,0.5)', fontSize: 16 },
   goBack: { fontWeight: '600' },
   hero: {

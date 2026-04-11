@@ -33,7 +33,7 @@ export default function BillingSuccessPage() {
 
   const s: Record<string, React.CSSProperties> = {
     page: {
-      minHeight: '100vh', backgroundColor: '#080C14',
+      minHeight: '100vh', backgroundColor: '#0A0F1A',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', gap: 20, padding: 40,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -60,7 +60,7 @@ export default function BillingSuccessPage() {
         Your WindowFit {plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : ''} account is active.
         Download the app and start scanning windows.
       </p>
-      <div style={{ backgroundColor: '#0D1520', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 400, border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div style={{ backgroundColor: '#111827', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 400, border: '1px solid rgba(255,255,255,0.08)' }}>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, margin: 0, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>Next Steps</p>
         {['Open WindowFit on your iPhone or Android device', 'Log in with your new email and password', 'Start scanning windows and building quotes'].map((step, i) => (
           <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>

@@ -236,9 +236,10 @@ export default function RoomDetailScreen({ route, navigation }: any) {
       await loadWindows();
       if (autoSaveRef.current) {
         setVoiceState('idle');
-        setParsed(null);
-        setTranscript('');
-        showToastWithUndo(`✓ ${data.label} saved`);
+setParsed(null);
+setTranscript('');
+showToastWithUndo(`✓ ${data.label} saved`);
+setTimeout(() => { startRecording(); }, 1000);
       } else {
         setVoiceModalVisible(false);
         showToast(`✓ ${data.label} added`);
@@ -929,7 +930,7 @@ export default function RoomDetailScreen({ route, navigation }: any) {
 }
 
 const S = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080C14' },
+  container: { flex: 1, backgroundColor: '#0A0F1A' },
   header: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: 'white', fontSize: 18, fontWeight: '800' },
   backBtn: { paddingVertical: 6, paddingRight: 12 },
@@ -948,7 +949,7 @@ const S = StyleSheet.create({
   lastSwatch: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   lastLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
   lastName: { color: '#30D158', fontSize: 12, fontWeight: '700', flex: 1 },
-  windowCard: { backgroundColor: '#0D1520', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 12 },
+  windowCard: { backgroundColor: '#111827', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 12 },
   windowCardHeader: { flexDirection: 'row', alignItems: 'flex-start' },
   windowLabel: { color: 'white', fontSize: 16, fontWeight: '700' },
   windowMeta: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
@@ -975,7 +976,7 @@ const S = StyleSheet.create({
   fab: { borderRadius: 16, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8 },
   fabIcon: { fontSize: 20 },
   fabText: { color: 'white', fontWeight: '800', fontSize: 17 },
-  modal: { flex: 1, backgroundColor: '#080C14' },
+  modal: { flex: 1, backgroundColor: '#0A0F1A' },
   modalHeader: { padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)', flexDirection: 'row', alignItems: 'flex-start' },
   modalTitle: { color: 'white', fontSize: 18, fontWeight: '800', flex: 1 },
   modalCloseBtn: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
@@ -993,7 +994,7 @@ const S = StyleSheet.create({
   autoSaveToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.05)' },
   autoSaveIndicator: { width: 10, height: 10, borderRadius: 5 },
   autoSaveText: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600' },
-  confirmCard: { width: '100%', backgroundColor: '#0D1520', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
+  confirmCard: { width: '100%', backgroundColor: '#111827', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
   confirmRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
   confirmDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 16 },
   confirmFieldLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
@@ -1012,7 +1013,7 @@ const S = StyleSheet.create({
   breadcrumb: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 },
   sectionLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
   emptyText: { color: 'rgba(255,255,255,0.3)', textAlign: 'center', paddingVertical: 24, fontSize: 14 },
-  stepCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#0D1520', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  stepCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#111827', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   stepCardDisabled: { opacity: 0.4 },
   stepBadge: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(48,209,88,0.15)', alignItems: 'center', justifyContent: 'center' },
   stepBadgeHD: { backgroundColor: 'rgba(10,132,255,0.15)' },
@@ -1020,12 +1021,12 @@ const S = StyleSheet.create({
   stepCardLabel: { flex: 1, color: 'white', fontSize: 16, fontWeight: '700' },
   chevron: { color: 'rgba(255,255,255,0.3)', fontSize: 20 },
   comingSoon: { color: 'rgba(255,255,255,0.25)', fontSize: 11, fontWeight: '600' },
-  lcCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#0D1520', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  lcCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#111827', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   lcDot: { width: 14, height: 14, borderRadius: 7, flexShrink: 0 },
   lcLabel: { color: 'white', fontSize: 15, fontWeight: '700' },
   lcDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
   lcCount: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
-  collectionCard: { backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
+  collectionCard: { backgroundColor: '#111827', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
   swatchStrip: { flexDirection: 'row', height: 10 },
   stripSwatch: { flex: 1 },
   collectionBody: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
@@ -1042,14 +1043,14 @@ const S = StyleSheet.create({
   confirmBtnText: { color: 'white', fontWeight: '700', fontSize: 15 },
   skipBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
   skipBtnText: { color: 'rgba(255,255,255,0.5)', fontWeight: '600', fontSize: 14 },
-  searchResultRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#0D1520', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  searchResultRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#111827', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   searchSwatch: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', flexShrink: 0 },
   searchResultName: { color: 'white', fontSize: 14, fontWeight: '600' },
   searchResultMeta: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 },
   gradeBadgeSmall: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
   gradeBadgeSmallText: { fontSize: 9, fontWeight: '700' },
   scopeSwatch: { width: 24, height: 24, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', flexShrink: 0 },
-  scopeOption: { backgroundColor: '#0D1520', borderRadius: 14, padding: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  scopeOption: { backgroundColor: '#111827', borderRadius: 14, padding: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   scopeOptionAll: { borderColor: 'rgba(48,209,88,0.2)' },
   scopeTitle: { color: 'white', fontWeight: '700', fontSize: 16, marginBottom: 4 },
   scopeDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },

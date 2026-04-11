@@ -204,8 +204,8 @@ export default function QuoteScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080C14' },
-  centered: { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#0A0F1A' },
+  centered: { flex: 1, backgroundColor: '#0A0F1A', alignItems: 'center', justifyContent: 'center' },
   header: {
     paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   quoteCard: {
     flex: 1,
-    backgroundColor: '#0D1520', borderRadius: 16,
+    backgroundColor: '#111827', borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
     padding: 16, flexDirection: 'row',
     justifyContent: 'space-between', alignItems: 'center',

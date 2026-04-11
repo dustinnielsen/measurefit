@@ -6,13 +6,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { TenantProvider } from './context/TenantContext';
-// Screens
 import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import SearchScreen from './screens/SearchScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
-import RoomsScreen from './screens/RoomsScreen';
-import RoomDetailScreen from './screens/RoomDetailScreen';
 import QuoteScreen from './screens/QuoteScreen';
 import QuoteBuilderScreen from './screens/QuoteBuilderScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -21,7 +18,6 @@ import { TabBarIcon } from './components/TabBarIcon';
 
 const Tab = createBottomTabNavigator();
 const SearchStack = createNativeStackNavigator();
-const RoomsStack  = createNativeStackNavigator();
 const QuoteStack  = createNativeStackNavigator();
 
 function SearchStackNav() {
@@ -33,21 +29,12 @@ function SearchStackNav() {
   );
 }
 
-function RoomsStackNav() {
-  return (
-    <RoomsStack.Navigator screenOptions={{ headerShown: false }}>
-      <RoomsStack.Screen name="RoomsList"  component={RoomsScreen} />
-      <RoomsStack.Screen name="RoomDetail" component={RoomDetailScreen} />
-    </RoomsStack.Navigator>
-  );
-}
-
 function QuoteStackNav() {
   return (
     <QuoteStack.Navigator screenOptions={{ headerShown: false }}>
       <QuoteStack.Screen name="QuoteList"    component={QuoteScreen} />
       <QuoteStack.Screen name="QuoteBuilder" component={QuoteBuilderScreen} />
-      <QuoteStack.Screen name="Payment" component={PaymentScreen} />
+      <QuoteStack.Screen name="Payment"      component={PaymentScreen} />
     </QuoteStack.Navigator>
   );
 }
@@ -58,7 +45,7 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0D1520',
+          backgroundColor: '#111827',
           borderTopColor: 'rgba(255,255,255,0.07)',
           borderTopWidth: 1,
           paddingBottom: 56,
@@ -78,7 +65,6 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home"     component={HomeScreen} />
-      <Tab.Screen name="Rooms"    component={RoomsStackNav} />
       <Tab.Screen name="Search"   component={SearchStackNav} />
       <Tab.Screen name="Quotes"   component={QuoteStackNav} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
@@ -88,7 +74,6 @@ function MainTabs() {
 
 function RootNavigator() {
   const { isLoading, isSignedIn } = useAuth();
-
   if (isLoading) {
     return (
       <View style={styles.loading}>
@@ -96,7 +81,6 @@ function RootNavigator() {
       </View>
     );
   }
-
   return (
     <NavigationContainer>
       {isSignedIn ? <MainTabs /> : <LoginScreen />}
@@ -119,7 +103,7 @@ export default function App() {
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: '#080C14',
+    backgroundColor: '#0A0F1A',
     alignItems: 'center',
     justifyContent: 'center',
   },

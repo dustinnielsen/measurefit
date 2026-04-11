@@ -1336,7 +1336,7 @@ app.post('/api/voice/parse', async (req, res) => {
       ],
       temperature: 0,
     });
-    const raw = completion.choices[0].message.content ?? '';
+const raw = completion.choices[0].message.content ?? '';
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch { parsed = { error: 'parse_failed', raw }; }

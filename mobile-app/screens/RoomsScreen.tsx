@@ -198,8 +198,8 @@ export default function RoomsScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080C14' },
-  centered: { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#0A0F1A' },
+  centered: { flex: 1, backgroundColor: '#0A0F1A', alignItems: 'center', justifyContent: 'center' },
   header: {
     paddingTop: 60, paddingHorizontal: 20, paddingBottom: 12,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 2 },
   list: { padding: 20, paddingTop: 4, gap: 10, paddingBottom: 100 },
   roomCard: {
-    backgroundColor: '#0D1520', borderRadius: 16,
+    backgroundColor: '#111827', borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
     padding: 16, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   fabContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, paddingBottom: 36 },
   fab: { borderRadius: 16, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8 },
   fabText: { color: 'white', fontWeight: '800', fontSize: 17 },
-  modal: { flex: 1, backgroundColor: '#080C14' },
+  modal: { flex: 1, backgroundColor: '#0A0F1A' },
   modalHeader: { padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)', flexDirection: 'row', alignItems: 'center' },
   modalTitle: { color: 'white', fontSize: 18, fontWeight: '800', flex: 1 },
   modalCloseBtn: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },

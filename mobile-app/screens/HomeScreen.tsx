@@ -307,8 +307,8 @@ export default function HomeScreen({ navigation }: any) {
 }
 
 const S = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#080C14', padding: 20, paddingTop: 64, gap: 12 },
-  centered:       { flex: 1, backgroundColor: '#080C14', alignItems: 'center', justifyContent: 'center' },
+  container:      { flex: 1, backgroundColor: '#0A0F1A', padding: 20, paddingTop: 64, gap: 12 },
+  centered:       { flex: 1, backgroundColor: '#0A0F1A', alignItems: 'center', justifyContent: 'center' },
 
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
   greeting:       { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
@@ -316,7 +316,7 @@ const S = StyleSheet.create({
   jobPill:        { borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 120 },
   jobPillText:    { fontSize: 12, fontWeight: '700' },
 
-  metricsRow:     { flexDirection: 'row', backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', paddingVertical: 14, paddingHorizontal: 8 },
+  metricsRow:     { flexDirection: 'row', backgroundColor: '#111827', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', paddingVertical: 14, paddingHorizontal: 8 },
   metricChip:     { flex: 1, alignItems: 'center', gap: 3 },
   metricValue:    { fontSize: 20, fontWeight: '800' },
   metricLabel:    { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '600' },
@@ -332,7 +332,7 @@ const S = StyleSheet.create({
   heroStat:       { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '600' },
   heroArrow:      { color: 'white', fontSize: 18, fontWeight: '700' },
 
-  recentCard:     { backgroundColor: '#0D1520', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 12 },
+  recentCard:     { backgroundColor: '#111827', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 12 },
   recentHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   recentTitle:    { color: 'white', fontSize: 15, fontWeight: '800' },
   recentSeeAll:   { fontSize: 13, fontWeight: '600' },
@@ -347,13 +347,13 @@ const S = StyleSheet.create({
   badge:          { borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   badgeText:      { fontSize: 10, fontWeight: '700' },
 
-  searchRow:      { backgroundColor: '#0D1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  searchRow:      { backgroundColor: '#111827', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   searchIcon:     { fontSize: 22 },
   searchTitle:    { color: 'white', fontSize: 14, fontWeight: '700' },
   searchSub:      { color: 'rgba(255,255,255,0.3)', fontSize: 11, marginTop: 2 },
   searchArrow:    { fontSize: 16, fontWeight: '700' },
 
-  modal:          { flex: 1, backgroundColor: '#080C14' },
+  modal:          { flex: 1, backgroundColor: '#0A0F1A' },
   modalHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   modalTitle:     { color: 'white', fontSize: 18, fontWeight: '800' },
   modalClose:     { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },

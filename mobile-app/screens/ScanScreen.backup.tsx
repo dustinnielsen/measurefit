@@ -469,7 +469,7 @@ export default function ScanScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080C14' },
+  container: { flex: 1, backgroundColor: '#0A0F1A' },
   header: {
     paddingTop: 60,
     paddingHorizontal: 20,
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
 
   // Mount type
   mountOption: {
-    backgroundColor: '#0D1520', borderWidth: 1,
+    backgroundColor: '#111827', borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)', borderRadius: 14, padding: 16, gap: 8,
   },
   mountOptionActive: { borderColor: '#0A84FF', backgroundColor: 'rgba(10,132,255,0.08)' },
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
     color: 'white', fontSize: 15, padding: 12,
   },
   roomOption: {
-    backgroundColor: '#0D1520', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#111827', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: 12, padding: 14, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },

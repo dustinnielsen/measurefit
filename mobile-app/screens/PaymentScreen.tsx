@@ -310,13 +310,13 @@ export default function PaymentScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container:           { flex: 1, backgroundColor: '#080C14' },
+  container:           { flex: 1, backgroundColor: '#0A0F1A' },
   header:              { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn:             { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   backIcon:            { color: 'white', fontSize: 24, lineHeight: 30 },
   headerTitle:         { color: 'white', fontSize: 20, fontWeight: '800', flex: 1 },
   content:             { padding: 20, gap: 16, paddingBottom: 60 },
-  summaryCard:         { backgroundColor: '#0D1520', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 20, gap: 16, alignItems: 'center' },
+  summaryCard:         { backgroundColor: '#111827', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 20, gap: 16, alignItems: 'center' },
   summaryQuoteNumber:  { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   summaryAmounts:      { flexDirection: 'row', gap: 0, width: '100%' },
   summaryAmountBlock:  { flex: 1, alignItems: 'center', gap: 4 },
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   summaryAmountValue:  { color: 'white', fontSize: 22, fontWeight: '800' },
   statusBadge:         { borderWidth: 1, borderRadius: 100, paddingHorizontal: 14, paddingVertical: 5 },
   statusText:          { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  optionCard:          { backgroundColor: '#0D1520', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 18, gap: 14 },
+  optionCard:          { backgroundColor: '#111827', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 18, gap: 14 },
   optionHeader:        { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   optionEmoji:         { fontSize: 28, lineHeight: 32 },
   optionTitle:         { color: 'white', fontWeight: '700', fontSize: 16, marginBottom: 4 },
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   primaryBtn:          { borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center' },
   primaryBtnText:      { color: 'white', fontWeight: '700', fontSize: 15 },
   btnDisabled:         { opacity: 0.5 },
-  modalContainer:      { flex: 1, backgroundColor: '#080C14' },
+  modalContainer:      { flex: 1, backgroundColor: '#0A0F1A' },
   modalHeader:         { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   modalTitle:          { color: 'white', fontSize: 20, fontWeight: '800' },
   modalClose:          { fontSize: 16, fontWeight: '600' },

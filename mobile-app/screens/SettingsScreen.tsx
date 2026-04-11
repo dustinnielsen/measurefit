@@ -175,13 +175,13 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080C14' },
+  container: { flex: 1, backgroundColor: '#0A0F1A' },
   header: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16 },
   headerTitle: { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
   headerSub: { color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 2 },
   content: { padding: 20, gap: 14, paddingBottom: 60 },
   card: {
-    backgroundColor: '#0D1520', borderRadius: 16,
+    backgroundColor: '#111827', borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 10,
   },
   cardLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   colorRow: { flexDirection: 'row', gap: 10 },
   colorSwatch: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: 'transparent' },
   colorSwatchActive: { borderColor: 'white', borderWidth: 3 },
-  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#080C14', borderRadius: 12, padding: 12 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#0A0F1A', borderRadius: 12, padding: 12 },
   previewIcon: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   previewIconText: { color: 'white', fontWeight: '800', fontSize: 16 },
   previewName: { color: 'white', fontWeight: '700', fontSize: 15 },
