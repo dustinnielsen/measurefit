@@ -993,12 +993,22 @@ const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
                 {sending ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.primaryBtnText}>Send to Customer →</Text>}
               </TouchableOpacity>
             </View>
-            <OrderSummaryButton full />
+            <TouchableOpacity
+              style={[styles.pdfBtn, styles.pdfBtnFull, { borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.06)', width: '100%' }]}
+              onPress={handleCopyOrderSummary}
+            >
+              <Text style={[styles.pdfBtnText, { color: 'rgba(255,255,255,0.7)' }]}>📋 Copy Order Summary</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
             <PDFButton full />
-            <OrderSummaryButton full />
+            <TouchableOpacity
+              style={[styles.pdfBtn, styles.pdfBtnFull, { borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.06)', width: '100%' }]}
+              onPress={handleCopyOrderSummary}
+            >
+              <Text style={[styles.pdfBtnText, { color: 'rgba(255,255,255,0.7)' }]}>📋 Copy Order Summary</Text>
+            </TouchableOpacity>
             {(() => {
               const ps = (quote as any).payment_status ?? 'unpaid';
               const isPaid = ps === 'deposit_paid' || ps === 'paid_in_full';
