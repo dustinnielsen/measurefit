@@ -325,7 +325,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
       }).select().single();
       if (error) throw error;
       await quotesService.addLineItem(quote.id, {
-        window_id: newWindow.id, product_id: null,
+        window_id: newWindow.id, product_id: undefined,
         description: data.label,
         width_in: data.width_inches, height_in: data.height_inches,
         unit_price_cents: 0, quantity: 1,
@@ -418,6 +418,47 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
   const openPDFOptions = () => { if (!canExportPDF) { setShowPDFGate(true); return; } setShowPDFOptions(true); };
 
+const handleCopyOrderSummary = () => {
+  if (!quote) return;
+  const customerName = selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`.trim() : 'Customer';
+  const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const lines: string[] = [];
+  lines.push(`ORDER SUMMARY — ${quote.quote_number}`);
+  lines.push(`Customer: ${customerName}`);
+  lines.push(`Date: ${date}`);
+  lines.push(`Dealer: ${dealer?.name ?? ''}`);
+  lines.push('');
+  lines.push('─────────────────────────────────────');
+  lineItems.forEach((item: any, idx: number) => {
+    const label = item.product_name ?? item.description ?? 'Window';
+    const dims = item.width_in && item.height_in ? `${item.width_in}" W × ${item.height_in}" H` : '—';
+    const mount = item.mount_type ? `${item.mount_type.charAt(0).toUpperCase() + item.mount_type.slice(1)} Mount` : '—';
+    // Parse collection and colorway from description (format: "Collection — Colorway")
+    const descParts = (item.description ?? '').split('—');
+    const collection = descParts[0]?.trim() || '—';
+    const colorway = descParts[1]?.trim() || '—';
+    lines.push(`${idx + 1}. ${label}`);
+    lines.push(`   Size:       ${dims}`);
+    lines.push(`   Mount:      ${mount}`);
+    lines.push(`   Collection: ${collection}`);
+    lines.push(`   Colorway:   ${colorway}`);
+    lines.push('');
+  });
+  lines.push('─────────────────────────────────────');
+  lines.push(`Subtotal:     $${(computedSubtotal / 100).toFixed(2)}`);
+  lines.push(`Installation: $${(computedInstall / 100).toFixed(2)}`);
+  lines.push(`TOTAL:        $${(computedTotal / 100).toFixed(2)}`);
+  const text = lines.join('\n');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showWindowToast('✓ Order summary copied'));
+  } else {
+    const el = document.createElement('textarea');
+    el.value = text; document.body.appendChild(el); el.select();
+    document.execCommand('copy'); document.body.removeChild(el);
+    showWindowToast('✓ Order summary copied');
+  }
+};
+
   const handleExportPDF = async () => {
     if (!quote) return;
     setShowPDFOptions(false); setExportingPDF(true);
@@ -475,7 +516,14 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   };
 
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
+const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
+  <TouchableOpacity
+    style={[styles.pdfBtn, full && styles.pdfBtnFull, { borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.06)' }]}
+    onPress={handleCopyOrderSummary}
+  >
+    <Text style={[styles.pdfBtnText, { color: 'rgba(255,255,255,0.7)' }]}>📋 Copy Order Summary</Text>
+  </TouchableOpacity>
+);
   const PDFButton = ({ full = false }: { full?: boolean }) => (
     <TouchableOpacity style={[styles.pdfBtn, full && styles.pdfBtnFull, canExportPDF ? { borderColor: brandColor + '66', backgroundColor: brandColor + '18' } : styles.pdfBtnLocked]} onPress={openPDFOptions} disabled={exportingPDF}>
       {exportingPDF ? <ActivityIndicator color={canExportPDF ? brandColor : 'rgba(255,255,255,0.3)'} size="small" /> :
@@ -938,15 +986,19 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
             {saving ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.primaryBtnText}>Create Quote</Text>}
           </TouchableOpacity>
         ) : quote.status === 'draft' ? (
-          <View style={styles.btnRow}>
-            <PDFButton />
-            <TouchableOpacity style={[styles.primaryBtn, { flex: 1, backgroundColor: brandColor }, sending && styles.btnDisabled]} onPress={handleSend} disabled={sending}>
-              {sending ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.primaryBtnText}>Send to Customer →</Text>}
-            </TouchableOpacity>
+          <View style={{ gap: 10 }}>
+            <View style={styles.btnRow}>
+              <PDFButton />
+              <TouchableOpacity style={[styles.primaryBtn, { flex: 1, backgroundColor: brandColor }, sending && styles.btnDisabled]} onPress={handleSend} disabled={sending}>
+                {sending ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.primaryBtnText}>Send to Customer →</Text>}
+              </TouchableOpacity>
+            </View>
+            <OrderSummaryButton full />
           </View>
         ) : (
           <>
             <PDFButton full />
+            <OrderSummaryButton full />
             {(() => {
               const ps = (quote as any).payment_status ?? 'unpaid';
               const isPaid = ps === 'deposit_paid' || ps === 'paid_in_full';
@@ -1103,7 +1155,6 @@ const styles = StyleSheet.create({
   searchInput: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 15, padding: 12 },
   backChevronText: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
   breadcrumb: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 },
-  sectionLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
   emptyText: { color: 'rgba(255,255,255,0.3)', textAlign: 'center', paddingVertical: 24, fontSize: 14 },
   stepCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#111827', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   stepCardDisabled: { opacity: 0.4 },
