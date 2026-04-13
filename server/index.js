@@ -337,8 +337,8 @@ app.post('/send-quote', async (req, res) => {
         <div style="padding:24px">
           <h3>Hi ${customerName}!</h3>
           <p>Your quote <strong>${quote.quote_number}</strong> is ready.</p>
-          <div style="text-align:center;margin:24px 0">
-            <div style="font-size:32px;font-weight:800;color:${brandColor}">$${(quote.total_cents/100).toFixed(0)}</div>
+          <div style="text-align:center;margin:24px 0;padding:16px;background:#f5f7fa;border-radius:8px">
+            <p style="margin:0;color:#444;font-size:15px">Your custom window covering quote is ready to review.</p>
           </div>
           <a href="${portalUrl}" style="display:block;background:${brandColor};color:white;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-weight:700">View & Approve Quote -></a>
         </div>
