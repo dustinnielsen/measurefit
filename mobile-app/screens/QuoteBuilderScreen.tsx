@@ -139,7 +139,7 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
   const [notes, setNotes] = useState('');
 
   const [globalMarkup, setGlobalMarkup] = useState(DEFAULT_MARKUP);
-  const [installPercent, setInstallPercent] = useState(DEFAULT_INSTALL);
+  const [installPerShade, setInstallPerShade] = useState(20);
   const [itemMarkups, setItemMarkups] = useState<Record<string, number>>({});
 
   // Fabric picker state
@@ -284,7 +284,12 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
     const sqft = (targetWindowDims.w * targetWindowDims.h) / 144;
     const msrpCents = Math.round(sqft * (GRADE_MSRP_PER_SQFT[collection.price_group] ?? 26) * 100);
 
-    const categoryDefault = dealerPricing.defaults.find(d => d.category === 'roller_shade') 
+    const categoryMap: Record<string, string> = {
+      roller_shade: 'Roller', cellular: 'Cellular', roman: 'Roman',
+      shutter: 'Shutter', blind: 'Natural', perfectsheer: 'Other',
+    };
+    const mappedCategory = categoryMap[collection.product_type] ?? 'Roller';
+    const categoryDefault = dealerPricing.defaults.find(d => d.category === mappedCategory)
       ?? dealerPricing.defaults[0];
     const costMultiplier = categoryDefault?.cost_multiplier ?? 0.31;
     const markupPercent = categoryDefault?.markup_percent ?? DEFAULT_MARKUP;
@@ -417,8 +422,8 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
   const lineItems = quote?.line_items ?? [];
   const computedSubtotal = lineItems.reduce((sum: number, item: any) => sum + getQuotePrice(item), 0);
-  const computedInstall = Math.round(computedSubtotal * installPercent / 100);
-  const computedTotal = computedSubtotal + computedInstall;
+  const computedInstall = installPerShade * lineItems.length;
+  const computedTotal = computedSubtotal + (computedInstall * 100);
 
   const filteredCustomers = customers.filter(c =>
     customerFullName(c).toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -495,7 +500,7 @@ const handleCopyOrderSummary = () => {
         const newCust = await customersService.createCustomer({ dealer_id: dealer.id, first_name: newCustomerFirstName.trim(), last_name: newCustomerLastName.trim(), email: newCustomerEmail.trim() || undefined, phone: newCustomerPhone.trim() || undefined, address_line1: newCustomerAddress.trim() || undefined, city: undefined, state: undefined, zip: undefined });
         customerId = newCust.id; setSelectedCustomer(newCust);
       }
-      const q = await quotesService.createQuote({ dealerId: dealer.id, customerId: customerId!, quoteNumber: '', windows: [], notes: notes.trim() || undefined, installPercent });
+      const q = await quotesService.createQuote({ dealerId: dealer.id, customerId: customerId!, quoteNumber: '', windows: [], notes: notes.trim() || undefined });
       setQuote(q);
     } catch (e: any) { Alert.alert('Failed to create quote', e.message); }
     finally { setSaving(false); }
@@ -804,7 +809,13 @@ const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
           const GRADE_MSRP_PER_SQFT: Record<number, number> = { 1: 18, 2: 26, 3: 38, 4: 54 };
           const sqft = (targetWindowDims.w * targetWindowDims.h) / 144;
           const msrpCents = Math.round(sqft * (GRADE_MSRP_PER_SQFT[selectedCollection.price_group] ?? 26) * 100);
-          const categoryDefault = dealerPricing.defaults.find(d => d.category === 'roller_shade') ?? dealerPricing.defaults[0];
+          const categoryMap: Record<string, string> = {
+            roller_shade: 'Roller', cellular: 'Cellular', roman: 'Roman',
+            shutter: 'Shutter', blind: 'Natural', perfectsheer: 'Other',
+          };
+          const mappedCategory = categoryMap[selectedCollection.product_type] ?? 'Roller';
+          const categoryDefault = dealerPricing.defaults.find(d => d.category === mappedCategory)
+            ?? dealerPricing.defaults[0];
           const costMultiplier = categoryDefault?.cost_multiplier ?? 0.31;
           const markupPercent = categoryDefault?.markup_percent ?? DEFAULT_MARKUP;
           const dealerCostCents = Math.round(msrpCents * costMultiplier);
@@ -960,11 +971,11 @@ const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
                 </View>
               </View>
               <View style={styles.marginField}>
-                <Text style={styles.marginLabel}>Install %</Text>
+                <Text style={styles.marginLabel}>Install $ / Shade</Text>
                 <View style={styles.marginInputRow}>
-                  <TouchableOpacity style={styles.marginBtn} onPress={() => setInstallPercent(p => Math.max(0, p - 5))}><Text style={styles.marginBtnText}>−</Text></TouchableOpacity>
-                  <TextInput value={String(installPercent)} onChangeText={v => { const n = parseInt(v.replace(/[^0-9]/g, '')) || 0; setInstallPercent(Math.min(100, Math.max(0, n))); }} style={styles.marginInput} keyboardType="numeric" selectTextOnFocus />
-                  <TouchableOpacity style={styles.marginBtn} onPress={() => setInstallPercent(p => Math.min(100, p + 5))}><Text style={styles.marginBtnText}>+</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.marginBtn} onPress={() => setInstallPerShade(p => Math.max(0, p - 5))}><Text style={styles.marginBtnText}>−</Text></TouchableOpacity>
+                  <TextInput value={String(installPerShade)} onChangeText={v => { const n = parseInt(v.replace(/[^0-9]/g, '')) || 0; setInstallPerShade(Math.max(0, n)); }} style={styles.marginInput} keyboardType="numeric" selectTextOnFocus />
+                  <TouchableOpacity style={styles.marginBtn} onPress={() => setInstallPerShade(p => p + 5)}><Text style={styles.marginBtnText}>+</Text></TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -985,7 +996,7 @@ const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
             ))}
             <View style={styles.divider} />
             <View style={styles.totalRow}><Text style={styles.totalLabel}>Subtotal</Text><Text style={styles.totalVal}>${(computedSubtotal / 100).toFixed(0)}</Text></View>
-            <View style={styles.totalRow}><Text style={styles.totalLabel}>Installation ({installPercent}%)</Text><Text style={styles.totalVal}>${(computedInstall / 100).toFixed(0)}</Text></View>
+            <View style={styles.totalRow}><Text style={styles.totalLabel}>Installation ({lineItems.length} × ${installPerShade})</Text><Text style={styles.totalVal}>${computedInstall.toFixed(0)}</Text></View>
             <View style={styles.divider} />
             <View style={styles.totalRow}><Text style={styles.grandTotalLabel}>Total</Text><Text style={[styles.grandTotalVal, { color: brandColor }]}>${(computedTotal / 100).toFixed(0)}</Text></View>
           </View>
