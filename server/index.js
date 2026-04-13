@@ -303,7 +303,8 @@ app.post('/send-quote', async (req, res) => {
 
     if (quoteError || !quote) return res.status(404).json({ error: 'Quote not found' });
 
-    Admin
+    let { data: tokenData } = await supabaseAdmin
+      .from('quote_tokens')
       .select('token')
       .eq('quote_id', quoteId)
       .order('created_at', { ascending: false })
