@@ -1346,6 +1346,96 @@ const raw = completion.choices[0].message.content ?? '';
     res.status(500).json({ error: err.message });
   }
 });
+// ─── PLAN TAKEOFF ─────────────────────────────────────────────────────────────
+app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No PDF file provided' });
+
+    const { projectName } = req.body;
+
+    const fs = require('fs');
+    const pdfBuffer = fs.readFileSync(file.path);
+    const pdfBase64 = pdfBuffer.toString('base64');
+    fs.unlinkSync(file.path);
+
+    // Use Anthropic API directly — native PDF support
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: pdfBase64,
+              },
+            },
+            {
+              type: 'text',
+              text: `You are analyzing architectural construction drawings for a window covering dealer.
+
+Analyze ALL pages of this PDF plan set carefully, focusing on:
+1. Reflected Ceiling Plans (RCP sheets labeled A700, A701, A702, A703 etc)
+2. Window Type sheets (labeled A620 etc) 
+3. Interior Elevation sheets (A410-A413 etc)
+4. Any window covering or shade schedule
+
+FIND ALL WINDOW COVERINGS indicated. Look for:
+- Motorized or manual roller shade symbols on RCPs (thick lines/rectangles along window walls)
+- Tags like R62R, RS1, RS2, WS1 or similar near windows
+- "MOTORIZED ROLLER SHADE", "SHADE (TYP)" notations
+- Window tags W1, W2, WT1, WT2 with dimensions
+- MechoSystems, Lutron, Hunter Douglas, Norman product callouts
+
+For EACH window covering location, return:
+- room_name: room name (e.g. "PRIVATE OP. 4")
+- room_number: room number (e.g. "B115")  
+- tag: covering tag/code (e.g. "R62R") or null
+- quantity: number of shades at this location
+- width_inches: width in inches or null
+- height_inches: height in inches or null
+- covering_type: type (e.g. "motorized roller shade")
+- sheet_ref: sheet where found (e.g. "A702")
+- confidence: "high", "medium", or "low"
+- notes: relevant notes
+
+Return ONLY a valid JSON array, no markdown, no explanation.
+If none found, return [].`
+            }
+          ]
+        }
+      ]
+    });
+
+    const raw = message.content[0]?.text ?? '[]';
+    let items;
+    try {
+      const clean = raw.replace(/```json|```/g, '').trim();
+      items = JSON.parse(clean);
+    } catch {
+      items = [];
+    }
+
+    res.json({
+      success: true,
+      projectName: projectName ?? 'Untitled Project',
+      itemCount: items.length,
+      items,
+    });
+
+  } catch (err) {
+    console.error('Takeoff analyze error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', function() {
