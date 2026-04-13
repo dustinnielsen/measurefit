@@ -303,8 +303,7 @@ app.post('/send-quote', async (req, res) => {
 
     if (quoteError || !quote) return res.status(404).json({ error: 'Quote not found' });
 
-    let { data: tokenData } = await supabase
-      .from('quote_tokens')
+    Admin
       .select('token')
       .eq('quote_id', quoteId)
       .order('created_at', { ascending: false })
@@ -313,12 +312,11 @@ app.post('/send-quote', async (req, res) => {
 
     if (!tokenData) {
       const token = require('crypto').randomBytes(32).toString('hex');
-      const { data: newToken } = await supabase
+      const { data: newToken } = await supabaseAdmin
         .from('quote_tokens')
         .insert({ quote_id: quoteId, token, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() })
         .select('token')
         .single();
-      tokenData = newToken;
     }
 
     const token = tokenData.token;
