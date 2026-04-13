@@ -268,32 +268,41 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
     [collectionsForStep, selectedLightControl]);
 
   const assignFabricToLineItem = async (collection: FabricCollection, colorway: Colorway) => {
-    if (!targetLineItemId || !targetWindowId || !quote) return;
-    try {
-      // Update window with fabric
-      await supabase.from('windows').update({
-        fabric_collection_id: collection.id,
-        fabric_collection_name: collection.collection_name,
-        fabric_colorway_name: colorway.name,
-        fabric_colorway_hex: colorway.hex,
-        fabric_price_group: collection.price_group,
-      }).eq('id', targetWindowId);
+  if (!targetLineItemId || !targetWindowId || !quote) return;
+  try {
+    // Update window with fabric
+    await supabase.from('windows').update({
+      fabric_collection_id: collection.id,
+      fabric_collection_name: collection.collection_name,
+      fabric_colorway_name: colorway.name,
+      fabric_colorway_hex: colorway.hex,
+      fabric_price_group: collection.price_group,
+    }).eq('id', targetWindowId);
 
-      // Estimate price based on dimensions and grade
-      const priceCents = estimatePrice(targetWindowDims.w, targetWindowDims.h, collection.price_group);
+    // Real dealer pricing: MSRP per sqft by grade, then cost multiplier + markup
+    const GRADE_MSRP_PER_SQFT: Record<number, number> = { 1: 18, 2: 26, 3: 38, 4: 54 };
+    const sqft = (targetWindowDims.w * targetWindowDims.h) / 144;
+    const msrpCents = Math.round(sqft * (GRADE_MSRP_PER_SQFT[collection.price_group] ?? 26) * 100);
 
-      // Update line item description and price
-      await supabase.from('quote_line_items').update({
-        description: `${collection.collection_name} — ${colorway.name}`,
-        unit_price_cents: priceCents,
-      }).eq('id', targetLineItemId);
+    const categoryDefault = dealerPricing.defaults.find(d => d.category === 'roller_shade') 
+      ?? dealerPricing.defaults[0];
+    const costMultiplier = categoryDefault?.cost_multiplier ?? 0.31;
+    const markupPercent = categoryDefault?.markup_percent ?? DEFAULT_MARKUP;
+    const dealerCostCents = Math.round(msrpCents * costMultiplier);
+    const quotePriceCents = Math.round(dealerCostCents * (1 + markupPercent / 100));
 
-      const updated = await quotesService.getQuote(quote.id);
-      setQuote(updated);
-      setFabricPickerVisible(false);
-      showWindowToast(`✓ ${collection.collection_name} assigned`);
-    } catch (e) { console.error('assignFabricToLineItem', e); }
-  };
+    // Update line item description and price
+    await supabase.from('quote_line_items').update({
+      description: `${collection.collection_name} — ${colorway.name}`,
+      unit_price_cents: dealerCostCents,
+    }).eq('id', targetLineItemId);
+
+    const updated = await quotesService.getQuote(quote.id);
+    setQuote(updated);
+    setFabricPickerVisible(false);
+    showWindowToast(`✓ ${collection.collection_name} assigned`);
+  } catch (e) { console.error('assignFabricToLineItem', e); }
+};
 
   const breadcrumb = () => {
     const parts: string[] = [];
@@ -791,8 +800,18 @@ const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
                   {targetWindowDims.w > 0 && (
                     <View style={styles.priceEstimate}>
                       <Text style={styles.priceEstimateText}>
-                        Est. quote price: ~${(estimatePrice(targetWindowDims.w, targetWindowDims.h, selectedCollection.price_group) / 100).toFixed(0)}
-                      </Text>
+        {(() => {
+          const GRADE_MSRP_PER_SQFT: Record<number, number> = { 1: 18, 2: 26, 3: 38, 4: 54 };
+          const sqft = (targetWindowDims.w * targetWindowDims.h) / 144;
+          const msrpCents = Math.round(sqft * (GRADE_MSRP_PER_SQFT[selectedCollection.price_group] ?? 26) * 100);
+          const categoryDefault = dealerPricing.defaults.find(d => d.category === 'roller_shade') ?? dealerPricing.defaults[0];
+          const costMultiplier = categoryDefault?.cost_multiplier ?? 0.31;
+          const markupPercent = categoryDefault?.markup_percent ?? DEFAULT_MARKUP;
+          const dealerCostCents = Math.round(msrpCents * costMultiplier);
+          const quotePriceCents = Math.round(dealerCostCents * (1 + markupPercent / 100));
+          return `Est. quote price: ~$${(quotePriceCents / 100).toFixed(0)}`;
+        })()}
+      </Text>
                     </View>
                   )}
                   {selectedCollection.colorways.map(cw => (
