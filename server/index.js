@@ -295,7 +295,7 @@ app.post('/send-quote', async (req, res) => {
   if (!quoteId) return res.status(400).json({ error: 'quoteId is required' });
 
   try {
-    const { data: quote, error: quoteError } = await supabaseadmin
+    const { data: quote, error: quoteError } = await supabaseAdmin
       .from('quotes')
       .select('*, customer:customers(*), dealer:dealers(*), line_items:quote_line_items(*)')
       .eq('id', quoteId)
