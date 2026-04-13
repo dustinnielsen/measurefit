@@ -1052,8 +1052,18 @@ const OrderSummaryButton = ({ full = false }: { full?: boolean }) => (
                     {!isPaid && <Text style={[styles.paymentBtnSub, { color: brandColor + 'AA' }]}>50% deposit · ${(Math.round(computedTotal * 0.5) / 100).toFixed(2)}</Text>}
                   </TouchableOpacity>
                   <View style={styles.sentStatusCard}>
-                    <Text style={styles.sentStatusText}>{quote.status === 'approved' ? '✅ Customer approved this quote' : `Quote is ${quote.status}`}</Text>
-                  </View>
+  <Text style={styles.sentStatusText}>{quote.status === 'approved' ? '✅ Customer approved this quote' : `Quote is ${quote.status}`}</Text>
+  <TouchableOpacity
+    style={{ marginTop: 10 }}
+    onPress={handleSend}
+    disabled={sending}
+  >
+    {sending
+      ? <ActivityIndicator color={brandColor} size="small" />
+      : <Text style={[styles.manualLink, { color: brandColor, textDecorationLine: 'none', fontWeight: '600' }]}>↩ Resend Quote Email</Text>
+    }
+  </TouchableOpacity>
+</View>
                 </>
               );
             })()}
