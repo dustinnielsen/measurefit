@@ -837,7 +837,17 @@ export const quotesService = {
     if (error) throw error;
   },
   async sendQuote(quoteId: string): Promise<void> {
-    await quotesService.updateStatus(quoteId, 'sent');
+    const API_BASE = 'https://windowfit-production.up.railway.app';
+    const res = await fetch(`${API_BASE}/send-quote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quoteId }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? 'Failed to send quote');
+    }
+    // Server handles status update to 'sent' — no need to call updateStatus separately
   },
   async deleteQuote(id: string): Promise<void> {
     const { error } = await supabase.from('quotes').delete().eq('id', id);
