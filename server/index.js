@@ -6,7 +6,7 @@ const { Resend } = require('resend');
 const Stripe = require('stripe');
 const PDFDocument = require('pdfkit');
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: 'uploads/', limits: { fileSize: 100 * 1024 * 1024 } });
 const app = express();
 
 app.use('/webhook', express.raw({ type: 'application/json' }));
@@ -1353,13 +1353,36 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     if (!file) return res.status(400).json({ error: 'No PDF file provided' });
 
     const { projectName } = req.body;
-
     const fs = require('fs');
+    const { PDFDocument } = require('pdf-lib');
+
     const pdfBuffer = fs.readFileSync(file.path);
-    const pdfBase64 = pdfBuffer.toString('base64');
     fs.unlinkSync(file.path);
 
-    // Use Anthropic API directly — native PDF support
+    // Load full PDF and extract only relevant pages
+    const fullPdf = await PDFDocument.load(pdfBuffer);
+    const totalPages = fullPdf.getPageCount();
+    console.log(`Takeoff: PDF has ${totalPages} pages`);
+
+    // Extract RCP pages, window type pages, elevation pages
+    // Strategy: scan page labels/content to find relevant sheets
+    // For now: send pages in batches of 10, focusing on architectural sheets
+    // Key pages for this plan set: 22-29 (window types + RCPs)
+    // We'll send pages 20-30 as the primary architectural batch
+    const startPage = Math.max(0, 20);
+    const endPage = Math.min(totalPages - 1, 35);
+
+    const subPdf = await PDFDocument.create();
+    const pageIndices = [];
+    for (let i = startPage; i <= endPage; i++) pageIndices.push(i);
+
+    const copiedPages = await subPdf.copyPages(fullPdf, pageIndices);
+    copiedPages.forEach(p => subPdf.addPage(p));
+
+    const subPdfBytes = await subPdf.save();
+    const pdfBase64 = Buffer.from(subPdfBytes).toString('base64');
+    console.log(`Takeoff: sending ${pageIndices.length} pages, ${Math.round(subPdfBytes.length/1024)}KB`);
+
     const Anthropic = require('@anthropic-ai/sdk');
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -1382,30 +1405,30 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
               type: 'text',
               text: `You are analyzing architectural construction drawings for a window covering dealer.
 
-Analyze ALL pages of this PDF plan set carefully, focusing on:
-1. Reflected Ceiling Plans (RCP sheets labeled A700, A701, A702, A703 etc)
-2. Window Type sheets (labeled A620 etc) 
-3. Interior Elevation sheets (A410-A413 etc)
-4. Any window covering or shade schedule
+Analyze ALL pages in this PDF carefully. These are pages from a larger plan set including:
+- Reflected Ceiling Plans (RCP sheets - A700, A701, A702, A703)
+- Window Type sheets (A620)
+- Interior Elevation sheets (A410-A413)
 
 FIND ALL WINDOW COVERINGS indicated. Look for:
-- Motorized or manual roller shade symbols on RCPs (thick lines/rectangles along window walls)
-- Tags like R62R, RS1, RS2, WS1 or similar near windows
-- "MOTORIZED ROLLER SHADE", "SHADE (TYP)" notations
-- Window tags W1, W2, WT1, WT2 with dimensions
+- Motorized or manual roller shade symbols on RCPs (thick black lines/rectangles along window walls)
+- The legend on RCP sheets identifies these symbols - look for "MOTORIZED ROLLER SHADE" in the legend
+- Tags/codes near windows like R62R, RS1, RS2, WS1
+- "SHADE (TYP)", "MOTORIZED ROLLER SHADE" notations
+- Window dimensions on window type sheets
 - MechoSystems, Lutron, Hunter Douglas, Norman product callouts
 
-For EACH window covering location, return:
+For EACH window covering location found, return:
 - room_name: room name (e.g. "PRIVATE OP. 4")
-- room_number: room number (e.g. "B115")  
-- tag: covering tag/code (e.g. "R62R") or null
+- room_number: room number (e.g. "B115")
+- tag: covering tag/code or null
 - quantity: number of shades at this location
 - width_inches: width in inches or null
 - height_inches: height in inches or null
 - covering_type: type (e.g. "motorized roller shade")
 - sheet_ref: sheet where found (e.g. "A702")
 - confidence: "high", "medium", or "low"
-- notes: relevant notes
+- notes: any relevant notes
 
 Return ONLY a valid JSON array, no markdown, no explanation.
 If none found, return [].`
@@ -1427,6 +1450,8 @@ If none found, return [].`
     res.json({
       success: true,
       projectName: projectName ?? 'Untitled Project',
+      totalPages,
+      pagesAnalyzed: pageIndices.length,
       itemCount: items.length,
       items,
     });
