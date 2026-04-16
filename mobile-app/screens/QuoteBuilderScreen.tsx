@@ -25,7 +25,7 @@ import type { Quote, Customer } from '../lib/supabase';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DEFAULT_MARKUP  = 40;
-const DEFAULT_INSTALL = 15;
+const DEFAULT_INSTALL = 20;
 const API_BASE        = 'https://windowfit-production.up.railway.app';
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
@@ -523,6 +523,11 @@ const handleCopyOrderSummary = () => {
     if (!quote) return;
     setSending(true);
     try {
+      await supabase.from('quotes').update({
+        subtotal_cents: computedSubtotal,
+        install_cents: computedInstall * 100,
+        total_cents: computedTotal,
+      }).eq('id', quote.id);
       await quotesService.sendQuote(quote.id);
       const updated = await quotesService.getQuote(quote.id);
       setQuote(updated);
