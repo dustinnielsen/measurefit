@@ -345,7 +345,7 @@ if (q.status === 'sent' || q.status === 'viewed') {
         <div style={styles.totalsCard}>
           <div style={styles.totalRow}>
             <span style={styles.totalLabel}>Subtotal</span>
-            <span style={styles.totalVal}>${((quote.line_items?.reduce((s, i) => s + (i.quote_price_cents ?? i.unit_price_cents ?? 0), 0) ?? 0) / 100).toFixed(0)}</span>
+            <span style={styles.totalVal}>${((quote.total_cents ?? ((quote.line_items?.reduce((s, i) => s + (i.quote_price_cents ?? i.unit_price_cents ?? 0), 0) ?? 0) + (quote.install_cents ?? 0))) / 100).toFixed(0)}</span>
           </div>
           <div style={styles.totalRow}>
             <span style={styles.totalLabel}>Installation</span>
@@ -355,7 +355,7 @@ if (q.status === 'sent' || q.status === 'viewed') {
           <div style={styles.totalRow}>
             <span style={styles.grandTotalLabel}>Total</span>
             <span style={{ ...styles.grandTotalVal, color: brandColor }}>
-              ${((quote.line_items?.reduce((s, i) => s + (i.quote_price_cents ?? i.unit_price_cents ?? 0), 0) ?? 0) / 100).toFixed(0)}
+              ${((quote.total_cents ?? ((quote.line_items?.reduce((s, i) => s + (i.quote_price_cents ?? i.unit_price_cents ?? 0), 0) ?? 0) + (quote.install_cents ?? 0))) / 100).toFixed(0)}
             </span>
           </div>
         </div>
