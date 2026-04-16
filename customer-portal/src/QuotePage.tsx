@@ -36,6 +36,7 @@ interface QuoteData {
     mount_type: string | null;
     quantity: number;
     unit_price_cents: number;
+    quote_price_cents: number | null;
     line_total_cents: number;
   }[];
 }
@@ -334,7 +335,7 @@ if (q.status === 'sent' || q.status === 'viewed') {
                 )}
               </div>
               <div style={styles.lineItemPrice}>
-                ${(item.line_total_cents / 100).toFixed(0)}
+                ${((item.quote_price_cents ?? item.unit_price_cents) / 100).toFixed(0)}
               </div>
             </div>
           ))}
@@ -344,7 +345,7 @@ if (q.status === 'sent' || q.status === 'viewed') {
         <div style={styles.totalsCard}>
           <div style={styles.totalRow}>
             <span style={styles.totalLabel}>Subtotal</span>
-            <span style={styles.totalVal}>${((quote.line_items?.reduce((s, i) => s + (i.unit_price_cents ?? 0), 0) ?? 0) / 100).toFixed(0)}</span>
+            <span style={styles.totalVal}>${((quote.line_items?.reduce((s, i) => s + (i.quote_price_cents ?? i.unit_price_cents ?? 0), 0) ?? 0) / 100).toFixed(0)}</span>
           </div>
           <div style={styles.totalRow}>
             <span style={styles.totalLabel}>Installation</span>
@@ -354,7 +355,7 @@ if (q.status === 'sent' || q.status === 'viewed') {
           <div style={styles.totalRow}>
             <span style={styles.grandTotalLabel}>Total</span>
             <span style={{ ...styles.grandTotalVal, color: brandColor }}>
-              ${((quote.line_items?.reduce((s, i) => s + (i.unit_price_cents ?? 0), 0) ?? 0) / 100).toFixed(0)}
+              ${((quote.line_items?.reduce((s, i) => s + (i.quote_price_cents ?? i.unit_price_cents ?? 0), 0) ?? 0) / 100).toFixed(0)}
             </span>
           </div>
         </div>

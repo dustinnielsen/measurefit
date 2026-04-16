@@ -298,9 +298,10 @@ export default function QuoteBuilderScreen({ route, navigation }: any) {
 
     // Update line item description and price
     await supabase.from('quote_line_items').update({
-      description: `${collection.collection_name} — ${colorway.name}`,
-      unit_price_cents: dealerCostCents,
-    }).eq('id', targetLineItemId);
+  description: `${collection.collection_name} – ${colorway.name}`,
+  unit_price_cents: dealerCostCents,
+  quote_price_cents: quotePriceCents,
+}).eq('id', targetLineItemId);
 
     const updated = await quotesService.getQuote(quote.id);
     setQuote(updated);
