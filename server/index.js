@@ -1388,10 +1388,22 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
       for (let i = frontEnd; i < totalPages && sampleIdx.length < MAX_PAGES; i += backStep) sampleIdx.push(i);
     }
 
-    const sub = await PDFDocument.create();
-    const copied = await sub.copyPages(fullPdf, sampleIdx);
-    copied.forEach(p => sub.addPage(p));
-    const subBytes = await sub.save();
+    const buildSub = async (indices) => {
+      const doc = await PDFDocument.create();
+      const pages = await doc.copyPages(fullPdf, indices);
+      pages.forEach(p => doc.addPage(p));
+      return doc.save();
+    };
+
+    // Anthropic request limit is ~10 MB; base64 inflates 33%, so cap raw PDF at 7 MB.
+    const MAX_BYTES = 7 * 1024 * 1024;
+    let subBytes = await buildSub(sampleIdx);
+    while (subBytes.length > MAX_BYTES && sampleIdx.length > 4) {
+      const trimTo = Math.max(4, Math.floor(sampleIdx.length * (MAX_BYTES / subBytes.length) * 0.85));
+      const step = sampleIdx.length / trimTo;
+      sampleIdx = Array.from({ length: trimTo }, (_, i) => sampleIdx[Math.min(sampleIdx.length - 1, Math.floor(i * step))]);
+      subBytes = await buildSub(sampleIdx);
+    }
     const subB64 = Buffer.from(subBytes).toString('base64');
     console.log(`Takeoff: analyzing ${sampleIdx.length} pages (of ${totalPages}), ${Math.round(subBytes.length / 1024)}KB`);
 
