@@ -1407,61 +1407,70 @@ Be thorough — a missed window means a missed sale for the contractor. Include 
 
 Return ONLY a valid JSON array. No markdown, no explanation. If truly none found return [].`;
 
-async function runTakeoffJob(jobId, pdfBuffer, projectName) {
+async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const job = takeoffJobs.get(jobId);
   const fs = require('fs');
-  const { PDFDocument } = require('pdf-lib');
+  const path = require('path');
+  const os = require('os');
+  const { execFile } = require('child_process');
   const Anthropic = require('@anthropic-ai/sdk');
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+  // Render a page range to JPEG files using pdftoppm (poppler).
+  // Pages are 1-indexed for pdftoppm.
+  const renderPages = (startPage, endPage) => new Promise((resolve, reject) => {
+    const outPrefix = path.join(os.tmpdir(), `tkf_${jobId}_${startPage}`);
+    execFile('pdftoppm', [
+      '-f', String(startPage),
+      '-l', String(endPage),
+      '-jpeg',
+      '-r', '96',
+      pdfPath,
+      outPrefix,
+    ], { timeout: 120000 }, (err, _stdout, stderr) => {
+      if (err) return reject(new Error(`pdftoppm: ${stderr || err.message}`));
+      const dir = path.dirname(outPrefix);
+      const base = path.basename(outPrefix);
+      const files = fs.readdirSync(dir)
+        .filter(f => f.startsWith(base) && (f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.ppm')))
+        .sort()
+        .map(f => path.join(dir, f));
+      resolve(files);
+    });
+  });
+
   try {
-    const fullPdf = await PDFDocument.load(pdfBuffer);
-    const totalPages = fullPdf.getPageCount();
-    console.log(`Takeoff [${jobId}]: ${totalPages}-page PDF, ${Math.round(pdfBuffer.length / 1024 / 1024 * 10) / 10} MB`);
-
-    // Split into sequential chunks capped at 20 MB each.
-    // avgPageBytes is used to estimate chunk size before actually building the sub-PDF.
-    const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
-    const avgPageBytes = pdfBuffer.length / totalPages;
-    const pagesPerChunk = Math.max(4, Math.floor(MAX_CHUNK_BYTES / avgPageBytes));
-
-    // Load a fresh copy per chunk and DELETE pages we don't want rather than
-    // copying pages we do — this preserves all cross-referenced resources
-    // (fonts, XObjects, etc.) that pdf-lib misses when copying to a new doc.
-    const buildSub = async (indices) => {
-      const doc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
-      const keep = new Set(indices);
-      const n = doc.getPageCount();
-      for (let i = n - 1; i >= 0; i--) {
-        if (!keep.has(i)) doc.removePage(i);
-      }
-      return doc.save({ useObjectStreams: false });
-    };
-
+    const PAGES_PER_BATCH = 8;
     const allItems = [];
-    let chunkStart = 0;
     let passNum = 0;
-    const totalPasses = Math.ceil(totalPages / pagesPerChunk);
+    const totalPasses = Math.ceil(totalPages / PAGES_PER_BATCH);
 
-    while (chunkStart < totalPages) {
+    for (let start = 1; start <= totalPages; start += PAGES_PER_BATCH) {
       passNum++;
-      const chunkEnd = Math.min(chunkStart + pagesPerChunk, totalPages);
-      let indices = Array.from({ length: chunkEnd - chunkStart }, (_, i) => chunkStart + i);
+      const end = Math.min(start + PAGES_PER_BATCH - 1, totalPages);
 
-      job.progress = `Analyzing pages ${chunkStart + 1}–${chunkEnd} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
+      job.progress = `Analyzing pages ${start}–${end} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
       console.log(`Takeoff [${jobId}]: ${job.progress}`);
 
-      let subBytes = await buildSub(indices);
-
-      // Safety trim if actual bytes exceed limit
-      while (subBytes.length > MAX_CHUNK_BYTES && indices.length > 4) {
-        const trimTo = Math.max(4, Math.floor(indices.length * (MAX_CHUNK_BYTES / subBytes.length) * 0.85));
-        indices = indices.slice(0, trimTo);
-        subBytes = await buildSub(indices);
+      let imagePaths;
+      try {
+        imagePaths = await renderPages(start, end);
+      } catch (renderErr) {
+        console.warn(`Takeoff [${jobId}]: render failed pages ${start}-${end}: ${renderErr.message}`);
+        continue;
       }
 
-      const subB64 = Buffer.from(subBytes).toString('base64');
-      const pageList = indices.map(i => i + 1).join(', ');
+      if (imagePaths.length === 0) {
+        console.warn(`Takeoff [${jobId}]: no images for pages ${start}-${end}`);
+        continue;
+      }
+
+      // Build image content blocks and clean up temp files immediately
+      const imageBlocks = imagePaths.map(p => {
+        const data = fs.readFileSync(p).toString('base64');
+        try { fs.unlinkSync(p); } catch {}
+        return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } };
+      });
 
       const message = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
@@ -1469,8 +1478,8 @@ async function runTakeoffJob(jobId, pdfBuffer, projectName) {
         messages: [{
           role: 'user',
           content: [
-            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: subB64 } },
-            { type: 'text', text: TAKEOFF_PROMPT(pageList, totalPages) },
+            ...imageBlocks,
+            { type: 'text', text: TAKEOFF_PROMPT(`${start}–${end}`, totalPages) },
           ],
         }],
       });
@@ -1480,9 +1489,9 @@ async function runTakeoffJob(jobId, pdfBuffer, projectName) {
       try { chunkItems = JSON.parse(raw.replace(/```json|```/g, '').trim()); } catch { chunkItems = []; }
       console.log(`Takeoff [${jobId}]: pass ${passNum} → ${chunkItems.length} items`);
       allItems.push(...chunkItems);
-
-      chunkStart = chunkEnd;
     }
+
+    try { fs.unlinkSync(pdfPath); } catch {}
 
     console.log(`Takeoff [${jobId}]: complete — ${allItems.length} total items across ${passNum} passes`);
     job.status = 'done';
@@ -1494,6 +1503,7 @@ async function runTakeoffJob(jobId, pdfBuffer, projectName) {
       items: allItems,
     };
   } catch (err) {
+    try { fs.unlinkSync(pdfPath); } catch {}
     console.error(`Takeoff [${jobId}] error:`, err);
     job.status = 'error';
     job.error = err.message;
@@ -1509,10 +1519,9 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     const fs = require('fs');
     const { PDFDocument } = require('pdf-lib');
 
+    // Read just enough to get page count; keep file on disk for background rendering
     const pdfBuffer = fs.readFileSync(file.path);
-    fs.unlinkSync(file.path);
-
-    const fullPdf = await PDFDocument.load(pdfBuffer);
+    const fullPdf = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
     const totalPages = fullPdf.getPageCount();
 
     const jobId = require('crypto').randomUUID();
@@ -1524,8 +1533,8 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
       error: null,
     });
 
-    // Fire and forget — runs in background with no HTTP timeout concern
-    runTakeoffJob(jobId, pdfBuffer, projectName).catch(() => {});
+    // file.path stays on disk; runTakeoffJob deletes it when done
+    runTakeoffJob(jobId, file.path, projectName, totalPages).catch(() => {});
 
     res.json({ jobId, totalPages });
   } catch (err) {
