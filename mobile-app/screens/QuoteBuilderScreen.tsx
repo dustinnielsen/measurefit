@@ -528,12 +528,11 @@ const handleCopyOrderSummary = () => {
     if (!quote) return;
     setSending(true);
     try {
-      await supabase.from('quotes').update({
-        subtotal_cents: computedSubtotal,
-        install_cents: computedInstall * 100,
-        total_cents: computedTotal,
-      }).eq('id', quote.id);
-      await quotesService.sendQuote(quote.id);
+      await quotesService.sendQuote(quote.id, {
+        subtotalCents: computedSubtotal,
+        installCents: computedInstall * 100,
+        totalCents: computedTotal,
+      });
       const updated = await quotesService.getQuote(quote.id);
       setQuote(updated);
     } catch (e: any) { Alert.alert('Failed to send', e.message); }
