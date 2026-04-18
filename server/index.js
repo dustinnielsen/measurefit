@@ -1388,13 +1388,13 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     console.log(`Takeoff: PDF has ${totalPages} pages`);
 
     // ── PASS 1: Discover which pages contain window covering data ──────────────
-    const sampleIdx = sampleIndices(totalPages, 20);
+    const sampleIdx = sampleIndices(totalPages, 10);
     const sampleBytes = await buildSubPdf(fullPdf, sampleIdx);
     const sampleB64 = Buffer.from(sampleBytes).toString('base64');
     console.log(`Takeoff pass 1: scanning ${sampleIdx.length} sample pages`);
 
     const discoverMsg = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1000,
       messages: [{
         role: 'user',
@@ -1458,7 +1458,7 @@ If nothing relevant found, return { "relevantPages": [], "summary": "No window c
     const analyzeB64 = Buffer.from(analyzeBytes).toString('base64');
 
     const analyzeMsg = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       messages: [{
         role: 'user',
