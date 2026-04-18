@@ -1354,69 +1354,19 @@ const raw = completion.choices[0].message.content ?? '';
   }
 });
 // ─── PLAN TAKEOFF ─────────────────────────────────────────────────────────────
-app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
-  try {
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: 'No PDF file provided' });
+const takeoffJobs = new Map();
 
-    const { projectName } = req.body;
-    const fs = require('fs');
-    const { PDFDocument } = require('pdf-lib');
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Prune jobs older than 2 hours
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const [id, job] of takeoffJobs.entries()) {
+    if (job.createdAt < cutoff) takeoffJobs.delete(id);
+  }
+}, 30 * 60 * 1000);
 
-    const pdfBuffer = fs.readFileSync(file.path);
-    fs.unlinkSync(file.path);
+const TAKEOFF_PROMPT = (pageList, totalPages) => `You are helping a window covering contractor (blinds, shades, shutters) take off every window from a set of architectural plans so they can quote window coverings for the whole building.
 
-    const fullPdf = await PDFDocument.load(pdfBuffer);
-    const totalPages = fullPdf.getPageCount();
-    console.log(`Takeoff: PDF has ${totalPages} pages`);
-
-    // Sample up to 20 pages spread across the full document.
-    // Bias toward the first 60% — window schedules and RCPs typically live there.
-    const MAX_PAGES = 25;
-    let sampleIdx = [];
-    if (totalPages <= MAX_PAGES) {
-      sampleIdx = Array.from({ length: totalPages }, (_, i) => i);
-    } else {
-      const frontCount = Math.ceil(MAX_PAGES * 0.6);
-      const backCount  = MAX_PAGES - frontCount;
-      const frontStep  = Math.max(1, Math.floor(totalPages * 0.6 / frontCount));
-      const backStep   = Math.max(1, Math.floor(totalPages * 0.4 / Math.max(backCount, 1)));
-      const frontEnd   = Math.floor(totalPages * 0.6);
-      for (let i = 0; i < frontEnd && sampleIdx.length < frontCount; i += frontStep) sampleIdx.push(i);
-      for (let i = frontEnd; i < totalPages && sampleIdx.length < MAX_PAGES; i += backStep) sampleIdx.push(i);
-    }
-
-    const buildSub = async (indices) => {
-      const doc = await PDFDocument.create();
-      const pages = await doc.copyPages(fullPdf, indices);
-      pages.forEach(p => doc.addPage(p));
-      return doc.save();
-    };
-
-    // Anthropic request limit is ~10 MB; base64 inflates 33%, so cap raw PDF at 7 MB.
-    const MAX_BYTES = 7 * 1024 * 1024;
-    let subBytes = await buildSub(sampleIdx);
-    while (subBytes.length > MAX_BYTES && sampleIdx.length > 4) {
-      const trimTo = Math.max(4, Math.floor(sampleIdx.length * (MAX_BYTES / subBytes.length) * 0.85));
-      const step = sampleIdx.length / trimTo;
-      sampleIdx = Array.from({ length: trimTo }, (_, i) => sampleIdx[Math.min(sampleIdx.length - 1, Math.floor(i * step))]);
-      subBytes = await buildSub(sampleIdx);
-    }
-    const subB64 = Buffer.from(subBytes).toString('base64');
-    console.log(`Takeoff: analyzing ${sampleIdx.length} pages (of ${totalPages}), ${Math.round(subBytes.length / 1024)}KB`);
-
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: subB64 } },
-          { type: 'text', text: `You are helping a window covering contractor (blinds, shades, shutters) take off every window from a set of architectural plans so they can quote window coverings for the whole building.
-
-These are ${sampleIdx.length} pages sampled from a ${totalPages}-page plan set (pages ${sampleIdx.map(i => i + 1).join(', ')}).
+These are pages ${pageList} from a ${totalPages}-page plan set.
 
 YOUR TASK: Find every window opening in this building and extract its dimensions and location.
 
@@ -1436,7 +1386,7 @@ HOW TO READ DIMENSIONS:
 - Rough opening is acceptable if finish opening not given
 - If only a window type tag is shown and no schedule is visible, note the tag and set dims to null
 
-For EACH window location found return:
+For EACH window location found return a JSON object with:
 - room_name: room or space name from the plan
 - room_number: room number if labeled, otherwise null
 - tag: window type tag (e.g. "W1", "A", "TYPE 3") or shade tag if shown, or null
@@ -1455,33 +1405,138 @@ For EACH window location found return:
 
 Be thorough — a missed window means a missed sale for the contractor. Include every window opening you can find.
 
-Return ONLY a valid JSON array. No markdown, no explanation. If truly none found return [].`
-          }
-        ]
-      }]
-    });
+Return ONLY a valid JSON array. No markdown, no explanation. If truly none found return [].`;
 
-    const raw = message.content[0]?.text ?? '[]';
-    let items;
-    try {
-      items = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    } catch { items = []; }
+async function runTakeoffJob(jobId, pdfBuffer, projectName) {
+  const job = takeoffJobs.get(jobId);
+  const fs = require('fs');
+  const { PDFDocument } = require('pdf-lib');
+  const Anthropic = require('@anthropic-ai/sdk');
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    console.log(`Takeoff complete: ${items.length} items found`);
+  try {
+    const fullPdf = await PDFDocument.load(pdfBuffer);
+    const totalPages = fullPdf.getPageCount();
+    console.log(`Takeoff [${jobId}]: ${totalPages}-page PDF, ${Math.round(pdfBuffer.length / 1024 / 1024 * 10) / 10} MB`);
 
-    res.json({
+    // Split into sequential chunks capped at 20 MB each.
+    // avgPageBytes is used to estimate chunk size before actually building the sub-PDF.
+    const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+    const avgPageBytes = pdfBuffer.length / totalPages;
+    const pagesPerChunk = Math.max(4, Math.floor(MAX_CHUNK_BYTES / avgPageBytes));
+
+    const buildSub = async (indices) => {
+      const doc = await PDFDocument.create();
+      const pages = await doc.copyPages(fullPdf, indices);
+      pages.forEach(p => doc.addPage(p));
+      return doc.save();
+    };
+
+    const allItems = [];
+    let chunkStart = 0;
+    let passNum = 0;
+    const totalPasses = Math.ceil(totalPages / pagesPerChunk);
+
+    while (chunkStart < totalPages) {
+      passNum++;
+      const chunkEnd = Math.min(chunkStart + pagesPerChunk, totalPages);
+      let indices = Array.from({ length: chunkEnd - chunkStart }, (_, i) => chunkStart + i);
+
+      job.progress = `Analyzing pages ${chunkStart + 1}–${chunkEnd} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
+      console.log(`Takeoff [${jobId}]: ${job.progress}`);
+
+      let subBytes = await buildSub(indices);
+
+      // Safety trim if actual bytes exceed limit
+      while (subBytes.length > MAX_CHUNK_BYTES && indices.length > 4) {
+        const trimTo = Math.max(4, Math.floor(indices.length * (MAX_CHUNK_BYTES / subBytes.length) * 0.85));
+        indices = indices.slice(0, trimTo);
+        subBytes = await buildSub(indices);
+      }
+
+      const subB64 = Buffer.from(subBytes).toString('base64');
+      const pageList = indices.map(i => i + 1).join(', ');
+
+      const message = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: subB64 } },
+            { type: 'text', text: TAKEOFF_PROMPT(pageList, totalPages) },
+          ],
+        }],
+      });
+
+      const raw = message.content[0]?.text ?? '[]';
+      let chunkItems = [];
+      try { chunkItems = JSON.parse(raw.replace(/```json|```/g, '').trim()); } catch { chunkItems = []; }
+      console.log(`Takeoff [${jobId}]: pass ${passNum} → ${chunkItems.length} items`);
+      allItems.push(...chunkItems);
+
+      chunkStart = chunkEnd;
+    }
+
+    console.log(`Takeoff [${jobId}]: complete — ${allItems.length} total items across ${passNum} passes`);
+    job.status = 'done';
+    job.result = {
       success: true,
-      projectName: projectName ?? 'Untitled Project',
+      projectName: projectName || 'Untitled Project',
       totalPages,
-      pagesAnalyzed: sampleIdx.map(i => i + 1),
-      itemCount: items.length,
-      items,
+      itemCount: allItems.length,
+      items: allItems,
+    };
+  } catch (err) {
+    console.error(`Takeoff [${jobId}] error:`, err);
+    job.status = 'error';
+    job.error = err.message;
+  }
+}
+
+app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No PDF file provided' });
+
+    const { projectName } = req.body;
+    const fs = require('fs');
+    const { PDFDocument } = require('pdf-lib');
+
+    const pdfBuffer = fs.readFileSync(file.path);
+    fs.unlinkSync(file.path);
+
+    const fullPdf = await PDFDocument.load(pdfBuffer);
+    const totalPages = fullPdf.getPageCount();
+
+    const jobId = require('crypto').randomUUID();
+    takeoffJobs.set(jobId, {
+      status: 'processing',
+      progress: `Starting analysis of ${totalPages}-page document…`,
+      createdAt: Date.now(),
+      result: null,
+      error: null,
     });
 
+    // Fire and forget — runs in background with no HTTP timeout concern
+    runTakeoffJob(jobId, pdfBuffer, projectName).catch(() => {});
+
+    res.json({ jobId, totalPages });
   } catch (err) {
-    console.error('Takeoff analyze error:', err);
+    console.error('Takeoff start error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/api/takeoff/status/:jobId', (req, res) => {
+  const job = takeoffJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  res.json({
+    status: job.status,
+    progress: job.progress,
+    result: job.result,
+    error: job.error,
+  });
 });
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;

@@ -85,6 +85,7 @@ export default function TakeoffScreen({ navigation }: any) {
   const [items, setItems] = useState<TakeoffItem[]>([]);
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [error, setError] = useState('');
+  const [progressText, setProgressText] = useState('');
 
   const handleFilePick = () => {
     const input = document.createElement('input');
@@ -100,31 +101,49 @@ export default function TakeoffScreen({ navigation }: any) {
   const handleAnalyze = async () => {
     if (!selectedFile) return;
     setError('');
+    setProgressText('Uploading plan set…');
     setPhase('analyzing');
     try {
       const formData = new FormData();
       formData.append('pdf', selectedFile);
       if (projectName.trim()) formData.append('projectName', projectName.trim());
 
-      const res = await fetch(`${API_BASE}/api/takeoff/analyze`, {
+      // Start the job — returns immediately with a jobId
+      const startRes = await fetch(`${API_BASE}/api/takeoff/analyze`, {
         method: 'POST',
         body: formData,
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? `Server error ${res.status}`);
+      if (!startRes.ok) {
+        const err = await startRes.json().catch(() => ({}));
+        throw new Error(err.error ?? `Server error ${startRes.status}`);
       }
+      const { jobId } = await startRes.json();
 
-      const data = await res.json();
-      const tagged: TakeoffItem[] = (data.items ?? []).map((item: any, i: number) => ({
-        ...item,
-        id: `item-${i}`,
-        quantity: item.quantity || 1,
-      }));
-      setResult(data);
-      setItems(tagged);
-      setPhase('results');
+      // Poll until done
+      let done = false;
+      while (!done) {
+        await new Promise(r => setTimeout(r, 3000));
+        const statusRes = await fetch(`${API_BASE}/api/takeoff/status/${jobId}`);
+        if (!statusRes.ok) throw new Error('Lost connection to analysis job');
+        const status = await statusRes.json();
+
+        if (status.status === 'done') {
+          done = true;
+          const data = status.result;
+          const tagged: TakeoffItem[] = (data.items ?? []).map((item: any, i: number) => ({
+            ...item,
+            id: `item-${i}`,
+            quantity: item.quantity || 1,
+          }));
+          setResult(data);
+          setItems(tagged);
+          setPhase('results');
+        } else if (status.status === 'error') {
+          throw new Error(status.error ?? 'Analysis failed');
+        } else {
+          setProgressText(status.progress ?? 'Analyzing…');
+        }
+      }
     } catch (e: any) {
       setError(e.message ?? 'Analysis failed');
       setPhase('upload');
@@ -198,6 +217,7 @@ export default function TakeoffScreen({ navigation }: any) {
     setResult(null);
     setItems([]);
     setError('');
+    setProgressText('');
   };
 
   // ── ANALYZING ────────────────────────────────────────────────────────────────
@@ -207,8 +227,8 @@ export default function TakeoffScreen({ navigation }: any) {
         <View style={styles.centered}>
           <ActivityIndicator color={brandColor} size="large" />
           <Text style={styles.analyzingTitle}>Analyzing your plan set…</Text>
-          <Text style={styles.analyzingSub}>Scanning for window schedules and RCPs</Text>
-          <Text style={styles.analyzingSub2}>This may take 60–90 seconds for large plans</Text>
+          <Text style={styles.analyzingSub}>{progressText || 'Starting…'}</Text>
+          <Text style={styles.analyzingSub2}>Scanning every page for windows and dimensions</Text>
           <Text style={styles.analyzingFile}>{selectedFile?.name}</Text>
         </View>
       </View>
