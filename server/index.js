@@ -1354,14 +1354,31 @@ const raw = completion.choices[0].message.content ?? '';
   }
 });
 // ─── PLAN TAKEOFF ─────────────────────────────────────────────────────────────
+async function buildSubPdf(fullPdf, indices) {
+  const { PDFDocument } = require('pdf-lib');
+  const sub = await PDFDocument.create();
+  const copied = await sub.copyPages(fullPdf, indices);
+  copied.forEach(p => sub.addPage(p));
+  return sub.save();
+}
+
+function sampleIndices(totalPages, maxSamples) {
+  const step = Math.max(1, Math.ceil(totalPages / maxSamples));
+  const indices = [];
+  for (let i = 0; i < totalPages; i += step) indices.push(i);
+  return indices;
+}
+
 app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
   try {
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'No PDF file provided' });
 
-    const { projectName, startPage: startPageParam, endPage: endPageParam } = req.body;
+    const { projectName } = req.body;
     const fs = require('fs');
     const { PDFDocument } = require('pdf-lib');
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     const pdfBuffer = fs.readFileSync(file.path);
     fs.unlinkSync(file.path);
@@ -1370,92 +1387,129 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     const totalPages = fullPdf.getPageCount();
     console.log(`Takeoff: PDF has ${totalPages} pages`);
 
-    // Use caller-supplied page range (1-based), defaulting to pages 1–30
-    const startPage = Math.max(0, startPageParam ? parseInt(startPageParam) - 1 : 0);
-    const endPage = Math.min(totalPages - 1, endPageParam ? parseInt(endPageParam) - 1 : 29);
+    // ── PASS 1: Discover which pages contain window covering data ──────────────
+    const sampleIdx = sampleIndices(totalPages, 20);
+    const sampleBytes = await buildSubPdf(fullPdf, sampleIdx);
+    const sampleB64 = Buffer.from(sampleBytes).toString('base64');
+    console.log(`Takeoff pass 1: scanning ${sampleIdx.length} sample pages`);
 
-    const subPdf = await PDFDocument.create();
-    const pageIndices = [];
-    for (let i = startPage; i <= endPage; i++) pageIndices.push(i);
-
-    const copiedPages = await subPdf.copyPages(fullPdf, pageIndices);
-    copiedPages.forEach(p => subPdf.addPage(p));
-
-    const subPdfBytes = await subPdf.save();
-    const pdfBase64 = Buffer.from(subPdfBytes).toString('base64');
-    console.log(`Takeoff: sending ${pageIndices.length} pages, ${Math.round(subPdfBytes.length/1024)}KB`);
-
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-    const message = await anthropic.messages.create({
+    const discoverMsg = await anthropic.messages.create({
       model: 'claude-opus-4-5',
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: pdfBase64,
-              },
-            },
-            {
-              type: 'text',
-              text: `You are analyzing architectural construction drawings for a window covering dealer.
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: sampleB64 } },
+          { type: 'text', text: `You are scanning an architectural plan set for a window covering contractor.
 
-Analyze ALL pages in this PDF carefully. These may include any combination of:
-- Reflected Ceiling Plans (RCPs)
-- Window schedules or window type sheets
-- Interior elevations
-- Finish schedules or specification sheets
+These are sample pages (not consecutive) from a larger document with ${totalPages} total pages.
+The sample pages shown here correspond to original document pages: ${sampleIdx.map(i => i + 1).join(', ')}.
 
-FIND ALL WINDOW COVERINGS indicated. Look for:
-- Roller shade, blind, shutter, or shade symbols on floor plans or RCPs (typically thick lines or rectangles along window walls)
-- Window covering schedules or tables listing quantities, widths, heights, and types
-- Tags or codes near windows (e.g. RS-1, WS-1, SH-1, or similar)
-- Notations like "SHADE (TYP)", "MOTORIZED ROLLER SHADE", "WINDOW TREATMENT", "BLIND", "SHUTTER"
-- Legend entries identifying window covering symbols
-- Product callouts (MechoSystems, Lutron, Hunter Douglas, Norman, etc.)
-- Rough opening or finished opening dimensions associated with shades
+Identify which of these pages contain ANY of the following:
+- Window covering schedules or tables (listing shades, blinds, shutters with sizes)
+- Reflected Ceiling Plans (RCPs) with shade or blind symbols
+- Window type sheets with covering specifications
+- Interior elevations showing window treatments
+- Legends or keynotes referencing window coverings
+- Any notation of "shade", "blind", "shutter", "roller", "cellular", "motorized", or similar
 
-For EACH window covering location found, extract:
-- room_name: the room or space name
-- room_number: the room number if shown, otherwise null
-- tag: the shade/covering tag or code if shown, otherwise null
-- quantity: number of shades/units at this location (default 1 if not specified)
-- width_inches: width in decimal inches if shown anywhere on these pages, otherwise null
-- height_inches: height in decimal inches if shown anywhere on these pages, otherwise null
-- covering_type: the type of covering (e.g. "motorized roller shade", "cellular shade", "shutter")
-- sheet_ref: the sheet or drawing number where found
-- confidence: "high" if clearly called out, "medium" if inferred from symbol/legend, "low" if uncertain
-- notes: any relevant installation notes, mount type, product spec, or other details
+Return ONLY a JSON object with no markdown:
+{
+  "relevantPages": [list of 1-based page numbers from the original document that contain window covering data],
+  "summary": "one sentence describing what you found"
+}
 
-Return ONLY a valid JSON array, no markdown, no explanation.
-If none found, return [].`
-            }
-          ]
+If nothing relevant found, return { "relevantPages": [], "summary": "No window covering data found in sample" }`
         }
-      ]
+      ]}
     });
 
-    const raw = message.content[0]?.text ?? '[]';
+    let relevantPages = [];
+    let discoverSummary = '';
+    try {
+      const raw = discoverMsg.content[0]?.text ?? '{}';
+      const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+      relevantPages = parsed.relevantPages ?? [];
+      discoverSummary = parsed.summary ?? '';
+    } catch { relevantPages = []; }
+
+    console.log(`Takeoff pass 1 result: ${relevantPages.length} relevant pages — ${discoverSummary}`);
+
+    // If pass 1 found nothing, fall back to first 20 pages
+    if (relevantPages.length === 0) {
+      console.log('Takeoff: no pages found in sample, falling back to pages 1-20');
+      relevantPages = Array.from({ length: Math.min(20, totalPages) }, (_, i) => i + 1);
+    }
+
+    // Expand each relevant page to include its neighbors (schedules span multiple pages)
+    const expandedSet = new Set();
+    relevantPages.forEach(p => {
+      for (let offset = -1; offset <= 1; offset++) {
+        const idx = p - 1 + offset;
+        if (idx >= 0 && idx < totalPages) expandedSet.add(idx);
+      }
+    });
+    // Cap at 30 pages to stay within token limits
+    const analyzeIdx = Array.from(expandedSet).sort((a, b) => a - b).slice(0, 30);
+    console.log(`Takeoff pass 2: analyzing ${analyzeIdx.length} pages: ${analyzeIdx.map(i => i + 1).join(', ')}`);
+
+    // ── PASS 2: Deep extraction on relevant pages ──────────────────────────────
+    const analyzeBytes = await buildSubPdf(fullPdf, analyzeIdx);
+    const analyzeB64 = Buffer.from(analyzeBytes).toString('base64');
+
+    const analyzeMsg = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 8000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: analyzeB64 } },
+          { type: 'text', text: `You are a window covering estimator analyzing architectural drawings. Extract every window covering in this document with maximum detail.
+
+EXTRACT ALL window coverings. For each one return:
+
+- room_name: full room/space name
+- room_number: room number or null
+- tag: shade tag or type code (e.g. "RS-1", "SH-A", "B-2") or null
+- quantity: number of shades at this location (integer, default 1)
+- width_inches: finished width in decimal inches. Convert fractions (e.g. 36 1/2 → 36.5). null if not found.
+- height_inches: finished height/drop in decimal inches. Convert fractions. null if not found.
+- covering_type: specific type — "motorized roller shade", "manual roller shade", "cellular shade", "roman shade", "shutter", "horizontal blind", "vertical blind", etc.
+- mount_type: "inside", "outside", "recessed", or null
+- motor_type: "motorized" or "manual" or null
+- opacity: "light filtering", "room darkening", "blackout", "solar screen", or null
+- fabric_spec: exact fabric/material callout from drawings (e.g. "RS1", "Screen 5%", "Blackout Liner") or null
+- product_spec: any specific product or brand callout (e.g. "MechoSystems 5100", "Lutron QS") or null
+- sheet_ref: sheet number where found
+- confidence: "high" = dimensions and type clearly stated; "medium" = type clear but dims inferred; "low" = symbol/legend only
+- notes: installation notes, pocket details, control side, color, or anything else relevant
+
+IMPORTANT:
+- Check window schedules and type tables carefully — dimensions are often in a table keyed to a tag
+- Cross-reference RCP symbols to the schedule to get sizes for each location
+- If a room has multiple windows of different sizes, create a separate entry for each size
+- Include ALL rooms and locations — do not skip any
+
+Return ONLY a valid JSON array. No markdown, no explanation. If none found return [].`
+        }
+      ]}
+    });
+
+    const rawItems = analyzeMsg.content[0]?.text ?? '[]';
     let items;
     try {
-      const clean = raw.replace(/```json|```/g, '').trim();
-      items = JSON.parse(clean);
-    } catch {
-      items = [];
-    }
+      items = JSON.parse(rawItems.replace(/```json|```/g, '').trim());
+    } catch { items = []; }
+
+    console.log(`Takeoff complete: ${items.length} items found`);
 
     res.json({
       success: true,
       projectName: projectName ?? 'Untitled Project',
       totalPages,
-      pagesAnalyzed: pageIndices.length,
+      relevantPages,
+      pagesAnalyzed: analyzeIdx.map(i => i + 1),
+      discoverSummary,
       itemCount: items.length,
       items,
     });
