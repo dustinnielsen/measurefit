@@ -14,6 +14,7 @@ import QuoteScreen from './screens/QuoteScreen';
 import QuoteBuilderScreen from './screens/QuoteBuilderScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import PaymentScreen from './screens/PaymentScreen';
+import TakeoffScreen from './screens/TakeoffScreen';
 import { TabBarIcon } from './components/TabBarIcon';
 
 const Tab = createBottomTabNavigator();
@@ -67,6 +68,7 @@ function MainTabs() {
       <Tab.Screen name="Home"     component={HomeScreen} />
       <Tab.Screen name="Search"   component={SearchStackNav} />
       <Tab.Screen name="Quotes"   component={QuoteStackNav} />
+      <Tab.Screen name="Takeoff"  component={TakeoffScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
