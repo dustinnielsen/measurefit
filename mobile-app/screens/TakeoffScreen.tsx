@@ -47,6 +47,8 @@ export default function TakeoffScreen({ navigation }: any) {
   const [phase, setPhase] = useState<Phase>('upload');
   const [projectName, setProjectName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [startPage, setStartPage] = useState('');
+  const [endPage, setEndPage] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [items, setItems] = useState<TakeoffItem[]>([]);
   const [creatingQuote, setCreatingQuote] = useState(false);
@@ -74,6 +76,8 @@ export default function TakeoffScreen({ navigation }: any) {
       const formData = new FormData();
       formData.append('pdf', selectedFile);
       if (projectName.trim()) formData.append('projectName', projectName.trim());
+      if (startPage.trim()) formData.append('startPage', startPage.trim());
+      if (endPage.trim()) formData.append('endPage', endPage.trim());
 
       const res = await fetch(`${API_BASE}/api/takeoff/analyze`, {
         method: 'POST',
@@ -157,6 +161,8 @@ export default function TakeoffScreen({ navigation }: any) {
     setPhase('upload');
     setSelectedFile(null);
     setProjectName('');
+    setStartPage('');
+    setEndPage('');
     setResult(null);
     setItems([]);
     setError('');
@@ -290,6 +296,36 @@ export default function TakeoffScreen({ navigation }: any) {
           />
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Page Range (optional)</Text>
+          <Text style={styles.pageRangeHint}>Narrow to the sheets with your window schedule or RCPs. Leave blank to scan pages 1–30.</Text>
+          <View style={styles.pageRangeRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pageRangeLabel}>Start page</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. 20"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={startPage}
+                onChangeText={setStartPage}
+                keyboardType="numeric"
+              />
+            </View>
+            <Text style={styles.pageRangeDash}>–</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pageRangeLabel}>End page</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. 40"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={endPage}
+                onChangeText={setEndPage}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.uploadBox} onPress={handleFilePick}>
           <Text style={styles.uploadIcon}>📄</Text>
           {selectedFile
@@ -368,6 +404,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     padding: 0,
+  },
+  pageRangeHint: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.35)',
+    marginBottom: 12,
+    lineHeight: 17,
+  },
+  pageRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  pageRangeLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+    marginBottom: 4,
+  },
+  pageRangeDash: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 18,
+    paddingBottom: 2,
   },
   uploadBox: {
     borderWidth: 2,
