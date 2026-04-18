@@ -291,10 +291,18 @@ case 'checkout.session.completed': {
 
 // ─── SEND QUOTE EMAIL ─────────────────────────────────────────────────────────
 app.post('/send-quote', async (req, res) => {
-  const { quoteId } = req.body;
+  const { quoteId, subtotalCents, installCents, totalCents } = req.body;
   if (!quoteId) return res.status(400).json({ error: 'quoteId is required' });
 
   try {
+    if (subtotalCents != null && installCents != null && totalCents != null) {
+      await supabaseAdmin.from('quotes').update({
+        subtotal_cents: subtotalCents,
+        install_cents: installCents,
+        total_cents: totalCents,
+      }).eq('id', quoteId);
+    }
+
     const { data: quote, error: quoteError } = await supabaseAdmin
       .from('quotes')
       .select('*, customer:customers(*), dealer:dealers(*), line_items:quote_line_items(*)')

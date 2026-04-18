@@ -836,12 +836,12 @@ export const quotesService = {
       .eq('quote_id', quoteId);
     if (error) throw error;
   },
-  async sendQuote(quoteId: string): Promise<void> {
+  async sendQuote(quoteId: string, totals: { subtotalCents: number; installCents: number; totalCents: number }): Promise<void> {
     const API_BASE = 'https://windowfit-production.up.railway.app';
     const res = await fetch(`${API_BASE}/send-quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quoteId }),
+      body: JSON.stringify({ quoteId, ...totals }),
     });
     if (!res.ok) {
       const err = await res.json();
