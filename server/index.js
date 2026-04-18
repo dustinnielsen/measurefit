@@ -1359,25 +1359,20 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'No PDF file provided' });
 
-    const { projectName } = req.body;
+    const { projectName, startPage: startPageParam, endPage: endPageParam } = req.body;
     const fs = require('fs');
     const { PDFDocument } = require('pdf-lib');
 
     const pdfBuffer = fs.readFileSync(file.path);
     fs.unlinkSync(file.path);
 
-    // Load full PDF and extract only relevant pages
     const fullPdf = await PDFDocument.load(pdfBuffer);
     const totalPages = fullPdf.getPageCount();
     console.log(`Takeoff: PDF has ${totalPages} pages`);
 
-    // Extract RCP pages, window type pages, elevation pages
-    // Strategy: scan page labels/content to find relevant sheets
-    // For now: send pages in batches of 10, focusing on architectural sheets
-    // Key pages for this plan set: 22-29 (window types + RCPs)
-    // We'll send pages 20-30 as the primary architectural batch
-    const startPage = Math.max(0, 20);
-    const endPage = Math.min(totalPages - 1, 35);
+    // Use caller-supplied page range (1-based), defaulting to pages 1–30
+    const startPage = Math.max(0, startPageParam ? parseInt(startPageParam) - 1 : 0);
+    const endPage = Math.min(totalPages - 1, endPageParam ? parseInt(endPageParam) - 1 : 29);
 
     const subPdf = await PDFDocument.create();
     const pageIndices = [];
@@ -1412,30 +1407,32 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
               type: 'text',
               text: `You are analyzing architectural construction drawings for a window covering dealer.
 
-Analyze ALL pages in this PDF carefully. These are pages from a larger plan set including:
-- Reflected Ceiling Plans (RCP sheets - A700, A701, A702, A703)
-- Window Type sheets (A620)
-- Interior Elevation sheets (A410-A413)
+Analyze ALL pages in this PDF carefully. These may include any combination of:
+- Reflected Ceiling Plans (RCPs)
+- Window schedules or window type sheets
+- Interior elevations
+- Finish schedules or specification sheets
 
 FIND ALL WINDOW COVERINGS indicated. Look for:
-- Motorized or manual roller shade symbols on RCPs (thick black lines/rectangles along window walls)
-- The legend on RCP sheets identifies these symbols - look for "MOTORIZED ROLLER SHADE" in the legend
-- Tags/codes near windows like R62R, RS1, RS2, WS1
-- "SHADE (TYP)", "MOTORIZED ROLLER SHADE" notations
-- Window dimensions on window type sheets
-- MechoSystems, Lutron, Hunter Douglas, Norman product callouts
+- Roller shade, blind, shutter, or shade symbols on floor plans or RCPs (typically thick lines or rectangles along window walls)
+- Window covering schedules or tables listing quantities, widths, heights, and types
+- Tags or codes near windows (e.g. RS-1, WS-1, SH-1, or similar)
+- Notations like "SHADE (TYP)", "MOTORIZED ROLLER SHADE", "WINDOW TREATMENT", "BLIND", "SHUTTER"
+- Legend entries identifying window covering symbols
+- Product callouts (MechoSystems, Lutron, Hunter Douglas, Norman, etc.)
+- Rough opening or finished opening dimensions associated with shades
 
-For EACH window covering location found, return:
-- room_name: room name (e.g. "PRIVATE OP. 4")
-- room_number: room number (e.g. "B115")
-- tag: covering tag/code or null
-- quantity: number of shades at this location
-- width_inches: width in inches or null
-- height_inches: height in inches or null
-- covering_type: type (e.g. "motorized roller shade")
-- sheet_ref: sheet where found (e.g. "A702")
-- confidence: "high", "medium", or "low"
-- notes: any relevant notes
+For EACH window covering location found, extract:
+- room_name: the room or space name
+- room_number: the room number if shown, otherwise null
+- tag: the shade/covering tag or code if shown, otherwise null
+- quantity: number of shades/units at this location (default 1 if not specified)
+- width_inches: width in decimal inches if shown anywhere on these pages, otherwise null
+- height_inches: height in decimal inches if shown anywhere on these pages, otherwise null
+- covering_type: the type of covering (e.g. "motorized roller shade", "cellular shade", "shutter")
+- sheet_ref: the sheet or drawing number where found
+- confidence: "high" if clearly called out, "medium" if inferred from symbol/legend, "low" if uncertain
+- notes: any relevant installation notes, mount type, product spec, or other details
 
 Return ONLY a valid JSON array, no markdown, no explanation.
 If none found, return [].`
