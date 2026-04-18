@@ -1374,7 +1374,7 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
 
     // Sample up to 20 pages spread across the full document.
     // Bias toward the first 60% — window schedules and RCPs typically live there.
-    const MAX_PAGES = 20;
+    const MAX_PAGES = 25;
     let sampleIdx = [];
     if (totalPages <= MAX_PAGES) {
       sampleIdx = Array.from({ length: totalPages }, (_, i) => i);
@@ -1402,34 +1402,48 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
         role: 'user',
         content: [
           { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: subB64 } },
-          { type: 'text', text: `You are a window covering estimator analyzing architectural drawings. These are ${sampleIdx.length} pages sampled from a ${totalPages}-page plan set (pages ${sampleIdx.map(i => i + 1).join(', ')}).
+          { type: 'text', text: `You are helping a window covering contractor (blinds, shades, shutters) take off every window from a set of architectural plans so they can quote window coverings for the whole building.
 
-Extract every window covering indicated. Look for:
-- Window covering schedules or tables listing types, sizes, and quantities
-- Reflected Ceiling Plans (RCPs) with shade/blind symbols — cross-reference to the legend and schedule
-- Window type sheets or elevation drawings with shade callouts
-- Tags/codes near windows (e.g. RS-1, SH-A, B-2) — look these up in any schedule on these pages
-- Notations like "SHADE", "BLIND", "SHUTTER", "ROLLER", "CELLULAR", "MOTORIZED"
-- Any product callouts (MechoSystems, Lutron, Hunter Douglas, Norman, etc.)
+These are ${sampleIdx.length} pages sampled from a ${totalPages}-page plan set (pages ${sampleIdx.map(i => i + 1).join(', ')}).
 
-For EACH window covering location return:
-- room_name: full room/space name
-- room_number: room number or null
-- tag: shade/covering tag or code or null
-- quantity: integer count at this location (default 1)
-- width_inches: finished width in decimal inches — convert fractions (36 1/2 → 36.5). null if not found.
-- height_inches: finished drop/height in decimal inches — convert fractions. null if not found.
-- covering_type: e.g. "motorized roller shade", "cellular shade", "shutter", "horizontal blind"
-- mount_type: "inside", "outside", or "recessed" or null
-- motor_type: "motorized" or "manual" or null
-- opacity: "light filtering", "room darkening", "blackout", or "solar screen" or null
-- fabric_spec: exact fabric/material callout (e.g. "RS1", "Screen 5%", "Blackout Liner") or null
-- product_spec: specific product or brand callout or null
-- sheet_ref: sheet or drawing number where found
-- confidence: "high" if dims + type clearly stated; "medium" if type clear but dims inferred; "low" if symbol/legend only
-- notes: installation notes, pocket details, control side, color, or other relevant details
+YOUR TASK: Find every window opening in this building and extract its dimensions and location.
 
-Return ONLY a valid JSON array. No markdown, no explanation. If none found return [].`
+DO NOT limit yourself to windows that already have shade/blind callouts. The contractor needs ALL windows — they will decide what covering to put on each one. Even if a plan has no window covering schedule, you must still extract every window.
+
+WHERE TO LOOK:
+- Floor plans: windows are shown as gaps in walls, often with dimension strings above or below the opening
+- Exterior elevations: show window width and height with dimension lines
+- Interior elevations: show window openings and heights above finished floor
+- Window/door schedules: tables listing window types with rough or finish opening sizes
+- Window type tags (e.g. W1, W2, A, B): cross-reference to any schedule shown
+- Section drawings: show sill height and head height which gives you the height
+
+HOW TO READ DIMENSIONS:
+- Dimensions are shown as feet-inches (e.g. 3'-0" = 36 inches, 2'-6" = 30 inches)
+- Convert ALL dimensions to decimal inches
+- Rough opening is acceptable if finish opening not given
+- If only a window type tag is shown and no schedule is visible, note the tag and set dims to null
+
+For EACH window location found return:
+- room_name: room or space name from the plan
+- room_number: room number if labeled, otherwise null
+- tag: window type tag (e.g. "W1", "A", "TYPE 3") or shade tag if shown, or null
+- quantity: number of identical windows at this location (default 1)
+- width_inches: opening width in decimal inches. null only if truly unreadable.
+- height_inches: opening height in decimal inches. null only if truly unreadable.
+- covering_type: if a shade/blind type is called out use it; otherwise use "window" as a placeholder
+- mount_type: "inside", "outside", or "recessed" if specified, otherwise null
+- motor_type: "motorized" or "manual" if specified, otherwise null
+- opacity: if specified ("light filtering", "room darkening", "blackout", "solar screen"), otherwise null
+- fabric_spec: any fabric or material callout, otherwise null
+- product_spec: any brand/product callout, otherwise null
+- sheet_ref: sheet number where you found this window
+- confidence: "high" if you can clearly read the dimensions; "medium" if you are inferring from scale or partial info; "low" if dimensions are not readable
+- notes: floor level, sill height, any special conditions (corner window, skylight, etc.)
+
+Be thorough — a missed window means a missed sale for the contractor. Include every window opening you can find.
+
+Return ONLY a valid JSON array. No markdown, no explanation. If truly none found return [].`
           }
         ]
       }]
