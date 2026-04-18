@@ -1425,12 +1425,16 @@ async function runTakeoffJob(jobId, pdfBuffer, projectName) {
     const avgPageBytes = pdfBuffer.length / totalPages;
     const pagesPerChunk = Math.max(4, Math.floor(MAX_CHUNK_BYTES / avgPageBytes));
 
+    // Load a fresh copy per chunk and DELETE pages we don't want rather than
+    // copying pages we do — this preserves all cross-referenced resources
+    // (fonts, XObjects, etc.) that pdf-lib misses when copying to a new doc.
     const buildSub = async (indices) => {
-      const doc = await PDFDocument.create();
-      const pages = await doc.copyPages(fullPdf, indices);
-      pages.forEach(p => doc.addPage(p));
-      // useObjectStreams: false produces a more universally compatible PDF
-      // that Anthropic's renderer can parse even for complex architectural plans
+      const doc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+      const keep = new Set(indices);
+      const n = doc.getPageCount();
+      for (let i = n - 1; i >= 0; i--) {
+        if (!keep.has(i)) doc.removePage(i);
+      }
       return doc.save({ useObjectStreams: false });
     };
 
