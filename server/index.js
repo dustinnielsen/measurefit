@@ -1429,7 +1429,9 @@ async function runTakeoffJob(jobId, pdfBuffer, projectName) {
       const doc = await PDFDocument.create();
       const pages = await doc.copyPages(fullPdf, indices);
       pages.forEach(p => doc.addPage(p));
-      return doc.save();
+      // useObjectStreams: false produces a more universally compatible PDF
+      // that Anthropic's renderer can parse even for complex architectural plans
+      return doc.save({ useObjectStreams: false });
     };
 
     const allItems = [];
