@@ -1425,7 +1425,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       '-l', String(endPage),
       '-jpeg',
       '-jpegopt', 'quality=70',
-      '-r', '150',
+      '-r', '100',
       pdfPath,
       outPrefix,
     ], { timeout: 120000 }, (err, _stdout, stderr) => {
@@ -1448,15 +1448,32 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   });
 
   try {
-    const PAGES_PER_BATCH = 5; // smaller batches at 150 DPI to keep payload manageable
+    const PAGES_PER_BATCH = 6;
+    const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 min max — return whatever was found
+    const jobStart = Date.now();
     const allItems = [];
     let passNum = 0;
     let renderFailures = 0;
-    const totalPasses = Math.ceil(totalPages / PAGES_PER_BATCH);
 
-    for (let start = 1; start <= totalPages; start += PAGES_PER_BATCH) {
+    // Build a page sample: all pages up to 48, then every 2nd page after that.
+    // For typical plan sets the important sheets (floor plans, elevations, schedules)
+    // live in the first half; later pages tend to be structural/MEP with no windows.
+    const pageList = [];
+    for (let p = 1; p <= Math.min(totalPages, 48); p++) pageList.push(p);
+    for (let p = 49; p <= totalPages; p += 2) pageList.push(p);
+
+    const totalPasses = Math.ceil(pageList.length / PAGES_PER_BATCH);
+
+    for (let batchIdx = 0; batchIdx < pageList.length; batchIdx += PAGES_PER_BATCH) {
+      if (Date.now() - jobStart > JOB_TIMEOUT_MS) {
+        console.log(`Takeoff [${jobId}]: 5-min timeout reached, returning ${allItems.length} items from ${passNum} passes`);
+        break;
+      }
+
       passNum++;
-      const end = Math.min(start + PAGES_PER_BATCH - 1, totalPages);
+      const batch = pageList.slice(batchIdx, batchIdx + PAGES_PER_BATCH);
+      const start = batch[0];
+      const end = batch[batch.length - 1];
 
       job.progress = `Analyzing pages ${start}–${end} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
       console.log(`Takeoff [${jobId}]: ${job.progress}`);
@@ -1466,12 +1483,13 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
         imagePaths = await renderPages(start, end);
       } catch (renderErr) {
         if (renderErr.message === 'PDFTOPPM_NOT_FOUND') {
-          throw new Error('PDF renderer (pdftoppm) is not installed on this server. Please check the Railway build logs — nixpacks.toml may not have applied.');
+          throw new Error('PDF renderer (pdftoppm) is not installed on this server. Check Railway build logs — nixpacks.toml may not have applied.');
         }
         renderFailures++;
         console.warn(`Takeoff [${jobId}]: render failed pages ${start}-${end}: ${renderErr.message}`);
         continue;
       }
+
 
       if (imagePaths.length === 0) {
         renderFailures++;
