@@ -1417,18 +1417,26 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   // Render a page range to JPEG files using pdftoppm (poppler).
-  // Pages are 1-indexed for pdftoppm.
+  // Pages are 1-indexed for pdftoppm. 150 DPI keeps architectural text legible.
   const renderPages = (startPage, endPage) => new Promise((resolve, reject) => {
     const outPrefix = path.join(os.tmpdir(), `tkf_${jobId}_${startPage}`);
     execFile('pdftoppm', [
       '-f', String(startPage),
       '-l', String(endPage),
       '-jpeg',
-      '-r', '96',
+      '-jpegopt', 'quality=70',
+      '-r', '150',
       pdfPath,
       outPrefix,
     ], { timeout: 120000 }, (err, _stdout, stderr) => {
-      if (err) return reject(new Error(`pdftoppm: ${stderr || err.message}`));
+      if (err) {
+        // Distinguish "not installed" from other render errors
+        const msg = stderr || err.message || '';
+        if (err.code === 'ENOENT' || msg.includes('not found')) {
+          return reject(new Error('PDFTOPPM_NOT_FOUND'));
+        }
+        return reject(new Error(`pdftoppm: ${msg}`));
+      }
       const dir = path.dirname(outPrefix);
       const base = path.basename(outPrefix);
       const files = fs.readdirSync(dir)
@@ -1440,9 +1448,10 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   });
 
   try {
-    const PAGES_PER_BATCH = 8;
+    const PAGES_PER_BATCH = 5; // smaller batches at 150 DPI to keep payload manageable
     const allItems = [];
     let passNum = 0;
+    let renderFailures = 0;
     const totalPasses = Math.ceil(totalPages / PAGES_PER_BATCH);
 
     for (let start = 1; start <= totalPages; start += PAGES_PER_BATCH) {
@@ -1456,11 +1465,16 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       try {
         imagePaths = await renderPages(start, end);
       } catch (renderErr) {
+        if (renderErr.message === 'PDFTOPPM_NOT_FOUND') {
+          throw new Error('PDF renderer (pdftoppm) is not installed on this server. Please check the Railway build logs — nixpacks.toml may not have applied.');
+        }
+        renderFailures++;
         console.warn(`Takeoff [${jobId}]: render failed pages ${start}-${end}: ${renderErr.message}`);
         continue;
       }
 
       if (imagePaths.length === 0) {
+        renderFailures++;
         console.warn(`Takeoff [${jobId}]: no images for pages ${start}-${end}`);
         continue;
       }
