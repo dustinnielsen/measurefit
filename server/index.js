@@ -1411,53 +1411,62 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const job = takeoffJobs.get(jobId);
   const fs = require('fs');
   const path = require('path');
-  const os = require('os');
-  const { execFile } = require('child_process');
+  const puppeteer = require('puppeteer');
   const Anthropic = require('@anthropic-ai/sdk');
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  // Render a page range to JPEG files using pdftoppm (poppler).
-  // Pages are 1-indexed for pdftoppm. 150 DPI keeps architectural text legible.
-  const renderPages = (startPage, endPage) => new Promise((resolve, reject) => {
-    const outPrefix = path.join(os.tmpdir(), `tkf_${jobId}_${startPage}`);
-    execFile('pdftoppm', [
-      '-f', String(startPage),
-      '-l', String(endPage),
-      '-jpeg',
-      '-jpegopt', 'quality=70',
-      '-r', '100',
-      pdfPath,
-      outPrefix,
-    ], { timeout: 120000 }, (err, _stdout, stderr) => {
-      if (err) {
-        // Distinguish "not installed" from other render errors
-        const msg = stderr || err.message || '';
-        if (err.code === 'ENOENT' || msg.includes('not found')) {
-          return reject(new Error('PDFTOPPM_NOT_FOUND'));
-        }
-        return reject(new Error(`pdftoppm: ${msg}`));
-      }
-      const dir = path.dirname(outPrefix);
-      const base = path.basename(outPrefix);
-      const files = fs.readdirSync(dir)
-        .filter(f => f.startsWith(base) && (f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.ppm')))
-        .sort()
-        .map(f => path.join(dir, f));
-      resolve(files);
-    });
+  // Render PDF pages to JPEG base64 strings via puppeteer + PDF.js.
+  // Launches one browser for the whole job and loads the PDF once.
+  const pdfjsPath  = require.resolve('pdfjs-dist/legacy/build/pdf.js');
+  const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.js');
+  const workerSrc  = fs.readFileSync(workerPath, 'utf8');
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
+  const bPage = await browser.newPage();
+  await bPage.setContent('<!DOCTYPE html><html><body style="margin:0;background:white"><canvas id="c"></canvas></body></html>');
+  await bPage.addScriptTag({ path: pdfjsPath });
+
+  // Create a blob URL for the worker so PDF.js can use it without fetch restrictions
+  await bPage.evaluate((ws) => {
+    const blob = new Blob([ws], { type: 'application/javascript' });
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  }, workerSrc);
+
+  // Load the PDF once into the browser context
+  const pdfBase64 = Buffer.from(fs.readFileSync(pdfPath)).toString('base64');
+  await bPage.evaluate(async (b64) => {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    window.__pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+  }, pdfBase64);
+
+  const renderPageToJpeg = async (pageNum) => {
+    return bPage.evaluate(async (pNum) => {
+      const pdfPage = await window.__pdf.getPage(pNum);
+      const viewport = pdfPage.getViewport({ scale: 1.5 });
+      const canvas = document.getElementById('c');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+      return canvas.toDataURL('image/jpeg', 0.75).replace('data:image/jpeg;base64,', '');
+    }, pageNum);
+  };
 
   try {
-    const PAGES_PER_BATCH = 6;
-    const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 min max — return whatever was found
+    const PAGES_PER_BATCH = 5;
+    const JOB_TIMEOUT_MS = 7 * 60 * 1000;
     const jobStart = Date.now();
     const allItems = [];
     let passNum = 0;
-    let renderFailures = 0;
 
-    // Build a page sample: all pages up to 48, then every 2nd page after that.
-    // For typical plan sets the important sheets (floor plans, elevations, schedules)
-    // live in the first half; later pages tend to be structural/MEP with no windows.
+    // All pages 1-48 (floor plans/elevations/schedules), then every 2nd page after
     const pageList = [];
     for (let p = 1; p <= Math.min(totalPages, 48); p++) pageList.push(p);
     for (let p = 49; p <= totalPages; p += 2) pageList.push(p);
@@ -1466,7 +1475,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
 
     for (let batchIdx = 0; batchIdx < pageList.length; batchIdx += PAGES_PER_BATCH) {
       if (Date.now() - jobStart > JOB_TIMEOUT_MS) {
-        console.log(`Takeoff [${jobId}]: 5-min timeout reached, returning ${allItems.length} items from ${passNum} passes`);
+        console.log(`Takeoff [${jobId}]: timeout, returning ${allItems.length} items from ${passNum} passes`);
         break;
       }
 
@@ -1478,31 +1487,17 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       job.progress = `Analyzing pages ${start}–${end} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
       console.log(`Takeoff [${jobId}]: ${job.progress}`);
 
-      let imagePaths;
-      try {
-        imagePaths = await renderPages(start, end);
-      } catch (renderErr) {
-        if (renderErr.message === 'PDFTOPPM_NOT_FOUND') {
-          throw new Error('PDF renderer (pdftoppm) is not installed on this server. Check Railway build logs — nixpacks.toml may not have applied.');
+      const imageBlocks = [];
+      for (const pageNum of batch) {
+        try {
+          const data = await renderPageToJpeg(pageNum);
+          imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
+        } catch (e) {
+          console.warn(`Takeoff [${jobId}]: failed to render page ${pageNum}: ${e.message}`);
         }
-        renderFailures++;
-        console.warn(`Takeoff [${jobId}]: render failed pages ${start}-${end}: ${renderErr.message}`);
-        continue;
       }
 
-
-      if (imagePaths.length === 0) {
-        renderFailures++;
-        console.warn(`Takeoff [${jobId}]: no images for pages ${start}-${end}`);
-        continue;
-      }
-
-      // Build image content blocks and clean up temp files immediately
-      const imageBlocks = imagePaths.map(p => {
-        const data = fs.readFileSync(p).toString('base64');
-        try { fs.unlinkSync(p); } catch {}
-        return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } };
-      });
+      if (imageBlocks.length === 0) continue;
 
       const message = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
@@ -1523,6 +1518,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       allItems.push(...chunkItems);
     }
 
+    await browser.close();
     try { fs.unlinkSync(pdfPath); } catch {}
 
     console.log(`Takeoff [${jobId}]: complete — ${allItems.length} total items across ${passNum} passes`);
@@ -1535,6 +1531,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       items: allItems,
     };
   } catch (err) {
+    try { browser.close(); } catch {}
     try { fs.unlinkSync(pdfPath); } catch {}
     console.error(`Takeoff [${jobId}] error:`, err);
     job.status = 'error';
