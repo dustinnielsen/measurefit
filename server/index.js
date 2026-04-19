@@ -810,7 +810,7 @@ app.post('/api/quotes/:id/pdf', async (req, res) => {
 
 // ─── HEALTH ───────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'MeasureFit Server', stripe: 'connected' });
+  res.json({ status: 'ok', service: 'MeasureFit Server', stripe: 'connected', build: 'puppeteer-renderer-v1' });
 });
 
 // ─── ADMIN AUTH ───────────────────────────────────────────────────────────────
