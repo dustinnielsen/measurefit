@@ -80,6 +80,7 @@ export default function TakeoffScreen({ navigation }: any) {
 
   const [phase, setPhase] = useState<Phase>('upload');
   const [projectName, setProjectName] = useState('');
+  const [schedulePage, setSchedulePage] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [items, setItems] = useState<TakeoffItem[]>([]);
@@ -107,6 +108,7 @@ export default function TakeoffScreen({ navigation }: any) {
       const formData = new FormData();
       formData.append('pdf', selectedFile);
       if (projectName.trim()) formData.append('projectName', projectName.trim());
+      if (schedulePage.trim()) formData.append('schedulePage', schedulePage.trim());
 
       // Start the job — returns immediately with a jobId
       const startRes = await fetch(`${API_BASE}/api/takeoff/analyze`, {
@@ -214,6 +216,7 @@ export default function TakeoffScreen({ navigation }: any) {
     setPhase('upload');
     setSelectedFile(null);
     setProjectName('');
+    setSchedulePage('');
     setResult(null);
     setItems([]);
     setError('');
@@ -388,6 +391,18 @@ export default function TakeoffScreen({ navigation }: any) {
             placeholderTextColor="rgba(255,255,255,0.3)"
             value={projectName}
             onChangeText={setProjectName}
+          />
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Window Schedule Page # (optional)</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. 12 — the page with the window size table"
+            placeholderTextColor="rgba(255,255,255,0.3)"
+            value={schedulePage}
+            onChangeText={setSchedulePage}
+            keyboardType="number-pad"
           />
         </View>
 
