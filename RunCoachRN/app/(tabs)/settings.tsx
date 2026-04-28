@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert, SafeAreaView, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
@@ -6,6 +6,7 @@ import {
 import { router } from 'expo-router';
 import { useAppStore, currentWeekNumber } from '../../src/store/useAppStore';
 import { HealthKitService } from '../../src/services/HealthKitService';
+import { StravaService, type StravaTokens } from '../../src/services/StravaService';
 import { Colors, CommonStyles, Radius, Spacing, Typography } from '../../src/theme';
 import { Card } from '../../src/components/ui/Card';
 import {
@@ -14,6 +15,11 @@ import {
 
 export default function SettingsTab() {
   const { profile, plan, clearAllData, generateAndSavePlan } = useAppStore();
+  const [stravaTokens, setStravaTokens] = useState<StravaTokens | null>(null);
+
+  useEffect(() => {
+    StravaService.loadTokens().then(setStravaTokens);
+  }, []);
 
   function confirmRegen() {
     Alert.alert(
@@ -116,8 +122,56 @@ export default function SettingsTab() {
           )}
         </Card>
 
+        {/* Strava */}
+        <SectionTitle title="Strava" />
+        <TouchableOpacity
+          style={styles.actionRow}
+          onPress={() => { router.push('/strava-connect'); }}
+        >
+          <View style={CommonStyles.rowBetween}>
+            <View>
+              <Text style={[Typography.subhead, { fontWeight: '600', color: Colors.textPrimary }]}>
+                {stravaTokens ? 'Connected' : 'Connect Strava'}
+              </Text>
+              {stravaTokens ? (
+                <Text style={[Typography.footnote, { color: Colors.success, marginTop: 2 }]}>
+                  Logged in as {stravaTokens.athleteName}
+                </Text>
+              ) : (
+                <Text style={[Typography.footnote, { color: Colors.textSecondary, marginTop: 2 }]}>
+                  Push completed workouts to your Strava feed
+                </Text>
+              )}
+            </View>
+            <View style={[styles.hkBadge, { backgroundColor: stravaTokens ? Colors.success + '20' : Colors.tertiary }]}>
+              <Text style={[Typography.caption1, { color: stravaTokens ? Colors.success : Colors.textSecondary, fontWeight: '600' }]}>
+                {stravaTokens ? 'ON' : 'OFF'}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
         {/* Actions */}
+        {profile.goalDate && (
+          <>
+            <SectionTitle title="Race" />
+            <Card>
+              <Row label="Race date" value={new Date(profile.goalDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} />
+            </Card>
+          </>
+        )}
+
         <SectionTitle title="Plan" />
+        <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/edit-race-date')}>
+          <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+            {profile.goalDate ? 'Edit Race Date' : 'Add Race Date'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/edit-schedule')}>
+          <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+            Edit Run Schedule
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.actionRow} onPress={confirmRegen}>
           <Text style={[Typography.subhead, { color: Colors.warning, fontWeight: '600' }]}>
             Regenerate Plan

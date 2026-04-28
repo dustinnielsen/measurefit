@@ -5,6 +5,7 @@ const KEYS = {
   PROFILE: '@runcoach/profile',
   PLAN:    '@runcoach/plan',
   FEEDBACK:'@runcoach/feedback',
+  STRAVA:  '@runcoach/strava_token',
 } as const;
 
 async function save<T>(key: string, value: T): Promise<void> {

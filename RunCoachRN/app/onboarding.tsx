@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import {
   ScrollView, StyleSheet, Text, TouchableOpacity, View,
-  SafeAreaView, TextInput, Switch, Animated,
+  SafeAreaView, TextInput, Switch, Animated, Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useAppStore } from '../src/store/useAppStore';
 import {
   InjuryRisk, InjuryType, RunningAbility, RunningGoal,
-  TrainingStyle, WorkoutType,
+  TrainingStyle, WorkoutType, goalNeedsTaper,
   ABILITY_DESCRIPTIONS, ABILITY_LABELS, GOAL_EMOJIS, GOAL_LABELS,
   INJURY_LABELS, TRAINING_STYLE_DESCRIPTIONS, TRAINING_STYLE_LABELS,
 } from '../src/types/enums';
@@ -32,8 +33,10 @@ export default function Onboarding() {
   const [longestRun, setLongestRun]           = useState(4);
   const [goal, setGoal]                       = useState<RunningGoal>(RunningGoal.GetFit);
   const [hasGoalDate, setHasGoalDate]         = useState(false);
+  const [goalDate, setGoalDate]               = useState(new Date());
   const [runDays, setRunDays]                 = useState(4);
-  const [longRunDay, setLongRunDay]           = useState(0);
+  const [selectedDays, setSelectedDays]       = useState<Set<number>>(new Set([1, 3, 5, 0])); // Mon/Wed/Fri/Sun
+  const [longRunDay, setLongRunDay]           = useState(0); // Sun
   const [strengthDays, setStrengthDays]       = useState(1);
   const [injuries, setInjuries]               = useState<Set<InjuryType>>(new Set([InjuryType.None]));
   const [style, setStyle]                     = useState<TrainingStyle>(TrainingStyle.Balanced);
@@ -64,7 +67,10 @@ export default function Onboarding() {
     const profile: UserProfile = {
       id: makeId(),
       age, ability, weeklyMileage, longestRecentRun: longestRun,
-      goal, runningDaysPerWeek: runDays, preferredLongRunDay: longRunDay,
+      goal,
+      goalDate: hasGoalDate ? goalDate.toISOString() : undefined,
+      runningDaysPerWeek: selectedDays.size, specificRunDays: Array.from(selectedDays).sort(),
+      preferredLongRunDay: longRunDay,
       strengthDaysPerWeek: strengthDays, injuries: injuryList,
       trainingStyle: style, injuryRisk: risk,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -107,9 +113,11 @@ export default function Onboarding() {
           weeklyMileage={weeklyMileage} setWeeklyMileage={setWeeklyMileage}
           longestRun={longestRun} setLongestRun={setLongestRun}
         />}
-        {step === 1 && <StepGoal goal={goal} setGoal={setGoal} />}
+        {step === 1 && <StepGoal goal={goal} setGoal={setGoal}
+          hasGoalDate={hasGoalDate} setHasGoalDate={setHasGoalDate}
+          goalDate={goalDate} setGoalDate={setGoalDate} />}
         {step === 2 && <StepSchedule
-          runDays={runDays} setRunDays={setRunDays}
+          selectedDays={selectedDays} setSelectedDays={setSelectedDays}
           longRunDay={longRunDay} setLongRunDay={setLongRunDay}
           strengthDays={strengthDays} setStrengthDays={setStrengthDays}
         />}
@@ -154,7 +162,10 @@ function StepBasicInfo({ age, setAge, ability, setAbility, weeklyMileage, setWee
   );
 }
 
-function StepGoal({ goal, setGoal }: any) {
+function StepGoal({ goal, setGoal, hasGoalDate, setHasGoalDate, goalDate, setGoalDate }: any) {
+  const minDate = new Date();
+  minDate.setDate(minDate.getDate() + 14); // at least 2 weeks out
+
   return (
     <View style={styles.stepContent}>
       <StepHeader title="What's your goal?" sub="This shapes every week of your plan." />
@@ -173,27 +184,84 @@ function StepGoal({ goal, setGoal }: any) {
           </TouchableOpacity>
         ))}
       </View>
+
+      <View style={styles.raceDateRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[Typography.subhead, { color: Colors.textPrimary, fontWeight: '600' }]}>
+            🏁  I have a race date
+          </Text>
+          <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+            Plan will taper for your race
+          </Text>
+        </View>
+        <Switch
+          value={hasGoalDate}
+          onValueChange={setHasGoalDate}
+          trackColor={{ true: Colors.accent }}
+          thumbColor="#fff"
+        />
+      </View>
+
+      {hasGoalDate && (
+        <DateTimePicker
+          value={goalDate}
+          mode="date"
+          display="spinner"
+          minimumDate={minDate}
+          onChange={(_: any, date?: Date) => date && setGoalDate(date)}
+          style={{ marginTop: -Spacing.sm }}
+          textColor={Colors.textPrimary}
+        />
+      )}
     </View>
   );
 }
 
-function StepSchedule({ runDays, setRunDays, longRunDay, setLongRunDay, strengthDays, setStrengthDays }: any) {
+function StepSchedule({ selectedDays, setSelectedDays, longRunDay, setLongRunDay, strengthDays, setStrengthDays }: any) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function toggleDay(i: number) {
+    const next = new Set<number>(selectedDays);
+    if (next.has(i)) {
+      if (next.size <= 2) return; // minimum 2 run days
+      next.delete(i);
+      if (longRunDay === i) setLongRunDay(Array.from(next)[0]);
+    } else {
+      next.add(i);
+    }
+    setSelectedDays(next);
+  }
+
   return (
     <View style={styles.stepContent}>
-      <StepHeader title="Set your schedule" sub="Be realistic — consistency beats ambition." />
-      <Stepper label="Running days / week" value={runDays} min={3} max={7} onChange={setRunDays} />
-      <View style={{ marginBottom: Spacing.xl }}>
-        <Text style={styles.fieldLabel}>Preferred long run day</Text>
-        <View style={styles.dayRow}>
-          {days.map((d, i) => (
-            <TouchableOpacity key={i} onPress={() => setLongRunDay(i)}
-              style={[styles.dayBtn, longRunDay === i && styles.dayBtnActive]}>
+      <StepHeader title="Set your schedule" sub="Pick the days you'll run. Be realistic — consistency beats ambition." />
+
+      <Text style={styles.fieldLabel}>Which days will you run?</Text>
+      <View style={styles.dayRow}>
+        {days.map((d, i) => (
+          <TouchableOpacity key={i} onPress={() => toggleDay(i)}
+            style={[styles.dayBtn, selectedDays.has(i) && styles.dayBtnActive]}>
+            <Text style={[styles.dayBtnText, selectedDays.has(i) && { color: '#fff' }]}>{d}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={[Typography.caption1, { color: Colors.textTertiary, marginBottom: Spacing.xl }]}>
+        {selectedDays.size} days selected · tap to toggle
+      </Text>
+
+      <Text style={styles.fieldLabel}>Which is your long run day?</Text>
+      <View style={[styles.dayRow, { marginBottom: Spacing.xl }]}>
+        {days.map((d, i) => {
+          const isRun = selectedDays.has(i);
+          return (
+            <TouchableOpacity key={i} onPress={() => isRun && setLongRunDay(i)}
+              style={[styles.dayBtn, longRunDay === i && styles.dayBtnActive, !isRun && { opacity: 0.25 }]}>
               <Text style={[styles.dayBtnText, longRunDay === i && { color: '#fff' }]}>{d}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          );
+        })}
       </View>
+
       <Stepper label="Strength days / week" value={strengthDays} min={0} max={3} onChange={setStrengthDays} />
       <InfoBox text="Strength training days are scheduled on non-running days where possible." />
     </View>
@@ -318,7 +386,8 @@ const styles = StyleSheet.create({
   stepBtnText:{ ...Typography.title3, color: Colors.accent },
   stepperValue: { ...Typography.title3, color: Colors.textPrimary, minWidth: 48, textAlign: 'center' },
 
-  goalGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: Spacing.xl },
+  goalGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: Spacing.xl },
+  raceDateRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.lg, marginBottom: Spacing.md },
   goalCard:   { width: '47%', padding: Spacing.lg, backgroundColor: Colors.surface, borderRadius: Radius.md, alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: 'transparent' },
   goalCardActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '0A' },
   goalLabel:  { ...Typography.subhead, fontWeight: '600', color: Colors.textPrimary, textAlign: 'center' },

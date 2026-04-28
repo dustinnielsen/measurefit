@@ -4,7 +4,7 @@ import { useAppStore, currentWeekNumber, weeklyMileage, workoutsForWeek } from '
 import { Colors, CommonStyles, Radius, Spacing, Typography } from '../../src/theme';
 import { Card } from '../../src/components/ui/Card';
 import { SimpleBarChart, type BarData } from '../../src/components/ui/SimpleBarChart';
-import { WORKOUT_LABELS, WorkoutType } from '../../src/types/enums';
+import { WORKOUT_LABELS, WorkoutType, isRunWorkout } from '../../src/types/enums';
 
 export default function ProgressTab() {
   const plan     = useAppStore(s => s.plan);
@@ -51,6 +51,27 @@ export default function ProgressTab() {
     streak++;
   }
 
+  // Personal records
+  const completedRuns = allCompleted.filter(w => isRunWorkout(w.workoutType));
+  const longestRun = completedRuns.reduce((best, w) => {
+    const d = w.actualDistanceMiles ?? w.distanceMiles ?? 0;
+    return d > best ? d : best;
+  }, 0);
+  const bestPace = completedRuns.reduce((best, w) => {
+    if (!w.averagePaceMinPerMile) return best;
+    return best === 0 || w.averagePaceMinPerMile < best ? w.averagePaceMinPerMile : best;
+  }, 0);
+  const peakWeekMiles = Array.from({ length: currentWeek }, (_, i) => i + 1).reduce((best, w) => {
+    const miles = workoutsForWeek(plan, w).filter(x => x.isCompleted).reduce((s, x) => s + (x.actualDistanceMiles ?? x.distanceMiles ?? 0), 0);
+    return miles > best ? miles : best;
+  }, 0);
+
+  // Consistency score: this week's completed non-rest / total non-rest planned
+  const thisWeekWorkouts = workoutsForWeek(plan, currentWeek);
+  const plannedCount  = thisWeekWorkouts.filter(w => w.workoutType !== WorkoutType.Rest).length;
+  const completedCount = thisWeekWorkouts.filter(w => w.isCompleted && w.workoutType !== WorkoutType.Rest).length;
+  const consistency = plannedCount > 0 ? Math.round((completedCount / plannedCount) * 100) : 0;
+
   // Workout type breakdown
   const typeCounts = allCompleted.reduce<Record<string, number>>((acc, w) => {
     if (w.workoutType === WorkoutType.Rest) return acc;
@@ -73,10 +94,25 @@ export default function ProgressTab() {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <StatCard value={totalMiles.toFixed(0)} label="Total Miles" emoji="🏃" />
-          <StatCard value={String(totalRuns)}      label="Workouts"    emoji="✅" />
-          <StatCard value={`${streak}w`}           label="Streak"      emoji="🔥" />
+          <StatCard value={totalMiles.toFixed(0)} label="Total Miles"  emoji="🏃" />
+          <StatCard value={String(totalRuns)}      label="Workouts"     emoji="✅" />
+          <StatCard value={`${streak}w`}           label="Streak"       emoji="🔥" />
+          <StatCard value={`${consistency}%`}      label="This Week"    emoji="📈" />
         </View>
+
+        {/* Personal records */}
+        {completedRuns.length > 0 && (
+          <Card style={{ marginTop: Spacing.lg }}>
+            <Text style={[Typography.label, { color: Colors.textSecondary, marginBottom: Spacing.md }]}>
+              PERSONAL RECORDS
+            </Text>
+            <View style={styles.prRow}>
+              <PRStat emoji="🛣️" label="Longest Run"  value={longestRun > 0 ? `${longestRun.toFixed(1)} mi` : '—'} />
+              <PRStat emoji="⚡" label="Best Pace"    value={bestPace > 0 ? formatPaceDisplay(bestPace) : '—'} />
+              <PRStat emoji="📅" label="Peak Week"    value={peakWeekMiles > 0 ? `${peakWeekMiles.toFixed(0)} mi` : '—'} />
+            </View>
+          </Card>
+        )}
 
         {/* Chart */}
         <Card style={{ marginTop: Spacing.lg }}>
@@ -145,6 +181,22 @@ export default function ProgressTab() {
   );
 }
 
+function formatPaceDisplay(minPerMile: number): string {
+  const m = Math.floor(minPerMile);
+  const s = Math.round((minPerMile - m) * 60);
+  return `${m}:${s.toString().padStart(2, '0')}/mi`;
+}
+
+function PRStat({ emoji, label, value }: { emoji: string; label: string; value: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <Text style={{ fontSize: 24 }}>{emoji}</Text>
+      <Text style={[Typography.headline, { color: Colors.textPrimary, marginTop: 4 }]}>{value}</Text>
+      <Text style={[Typography.caption1, { color: Colors.textSecondary, textAlign: 'center' }]}>{label}</Text>
+    </View>
+  );
+}
+
 function StatCard({ value, label, emoji }: { value: string; label: string; emoji: string }) {
   return (
     <View style={styles.statCard}>
@@ -165,4 +217,5 @@ const styles = StyleSheet.create({
   scroll:   { padding: Spacing.xl, paddingBottom: Spacing['4xl'] },
   statsRow: { flexDirection: 'row', gap: Spacing.sm },
   statCard: { flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.md, alignItems: 'center', gap: 2 },
+  prRow:    { flexDirection: 'row', justifyContent: 'space-around' },
 });

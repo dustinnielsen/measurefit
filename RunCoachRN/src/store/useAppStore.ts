@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { StorageService } from '../services/StorageService';
 import { generatePlan, profileToPlanInput } from '../services/TrainingPlanGenerator';
 import { analyze, applyAdjustments } from '../services/AdaptationEngine';
+import { NotificationService } from '../services/NotificationService';
 import type {
   GPSPoint, RunFeedback, TrainingPlan, UserProfile, WorkoutDay, WorkoutSession,
 } from '../types/models';
@@ -105,6 +106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const plan  = generatePlan(input);
     set({ plan });
     await StorageService.savePlan(plan);
+    NotificationService.scheduleWeeklySummary(plan).catch(() => {});
   },
 
   updateWorkout: async (id, patch) => {
@@ -116,6 +118,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     set({ plan: updated });
     await StorageService.savePlan(updated);
+    if (patch.isCompleted) NotificationService.scheduleWeeklySummary(updated).catch(() => {});
   },
 
   // ── Feedback + adaptation ─────────────────────────────────

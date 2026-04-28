@@ -102,11 +102,7 @@ export default function WorkoutScreen() {
       route:                 gpsData.points.length > 0 ? gpsData.points : undefined,
     });
 
-    if (isRunWorkout(workout!.workoutType)) {
-      router.replace(`/checkin/${workout!.id}`);
-    } else {
-      router.back();
-    }
+    router.replace(`/checkin/${workout!.id}`);
   }
 
   function handleSkip() {

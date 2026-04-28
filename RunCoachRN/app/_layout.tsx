@@ -22,8 +22,11 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="workout/[id]" options={{ presentation: 'fullScreenModal' }} />
-        <Stack.Screen name="checkin/[id]"  options={{ presentation: 'modal' }} />
+        <Stack.Screen name="workout/[id]"    options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="checkin/[id]"   options={{ presentation: 'modal' }} />
+        <Stack.Screen name="edit-schedule"    options={{ presentation: 'modal' }} />
+        <Stack.Screen name="edit-race-date"  options={{ presentation: 'modal' }} />
+        <Stack.Screen name="strava-connect"  options={{ presentation: 'modal' }} />
       </Stack>
     </GestureHandlerRootView>
   );

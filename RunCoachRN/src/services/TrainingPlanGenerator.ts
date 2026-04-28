@@ -31,10 +31,11 @@ export function generatePlan(input: PlanInput, startingOn?: Date): TrainingPlan 
 // MARK: - Week count
 
 function computeTotalWeeks(input: PlanInput): number {
-  if (input.goalDate && goalNeedsTaper(input.goal)) {
-    const ms = input.goalDate.getTime() - new Date().getTime();
-    const weeks = Math.floor(ms / (7 * 24 * 60 * 60 * 1000));
-    return Math.max(8, Math.min(24, weeks));
+  if (input.goalDate) {
+    const startDate = nextMonday(new Date());
+    const ms = input.goalDate.getTime() - startDate.getTime();
+    const weeks = Math.round(ms / (7 * 24 * 60 * 60 * 1000));
+    return Math.max(4, Math.min(24, weeks));
   }
   switch (input.goal) {
     case RunningGoal.GetFit:       return 12;
@@ -101,15 +102,37 @@ interface SlotAssignment {
   strength: number[];
 }
 
-function assignSlots(input: PlanInput): SlotAssignment {
-  const { daysPerWeek, preferredLongRunDay: longRun, strengthDaysPerWeek } = input;
-  const clampedDays = Math.max(3, Math.min(5, daysPerWeek));
+// Convert 0=Sun…6=Sat day-of-week to 0=Mon…6=Sun week-offset
+function dowToSlot(dow: number): number { return (dow + 6) % 7; }
 
+function assignSlots(input: PlanInput): SlotAssignment {
+  const { preferredLongRunDay, strengthDaysPerWeek } = input;
+  const longRun = dowToSlot(preferredLongRunDay);
+
+  // If user picked specific days, use those directly
+  if (input.specificRunDays && input.specificRunDays.length >= 2) {
+    const runSlots = input.specificRunDays.map(dowToSlot);
+    const otherRun = runSlots.filter(s => s !== longRun);
+    const taken = new Set<number>(runSlots);
+
+    // Quality: best of the other run days (2-3 days before long run)
+    const quality = bestQualitySlot(longRun, new Set([longRun]), otherRun);
+    const easy = otherRun.filter(s => s !== quality);
+
+    const strengthSlots: number[] = [];
+    for (let d = 0; d < 7 && strengthSlots.length < strengthDaysPerWeek; d++) {
+      if (!taken.has(d)) { strengthSlots.push(d); taken.add(d); }
+    }
+    return { longRun, quality, easy, strength: strengthSlots };
+  }
+
+  // Fallback: auto-assign based on count
+  const clampedDays = Math.max(3, Math.min(5, input.daysPerWeek));
   const taken = new Set<number>([longRun]);
   const quality = bestQualitySlot(longRun, taken);
   taken.add(quality);
 
-  const easyCount = clampedDays - 2; // total run days minus long + quality
+  const easyCount = clampedDays - 2;
   const easySlots = bestEasySlots(longRun, quality, taken, easyCount);
   easySlots.forEach(s => taken.add(s));
 
@@ -117,12 +140,10 @@ function assignSlots(input: PlanInput): SlotAssignment {
   for (let d = 0; d < 7 && strengthSlots.length < strengthDaysPerWeek; d++) {
     if (!taken.has(d)) { strengthSlots.push(d); taken.add(d); }
   }
-
   return { longRun, quality, easy: easySlots, strength: strengthSlots };
 }
 
-function bestQualitySlot(longRun: number, taken: Set<number>): number {
-  // Prefer 2-3 days before long run
+function bestQualitySlot(longRun: number, taken: Set<number>, allowedSlots?: number[]): number {
   const candidates = [
     { offset: (longRun - 2 + 7) % 7, score: 100 },
     { offset: (longRun - 3 + 7) % 7, score: 80 },
@@ -130,9 +151,14 @@ function bestQualitySlot(longRun: number, taken: Set<number>): number {
     { offset: (longRun + 3) % 7, score: 40 },
   ];
   for (const c of candidates.sort((a, b) => b.score - a.score)) {
-    if (!taken.has(c.offset)) return c.offset;
+    if (taken.has(c.offset)) continue;
+    if (allowedSlots && !allowedSlots.includes(c.offset)) continue;
+    return c.offset;
   }
-  // Fallback: any non-adjacent slot
+  if (allowedSlots) {
+    const best = allowedSlots.find(s => !taken.has(s));
+    if (best !== undefined) return best;
+  }
   for (let d = 0; d < 7; d++) {
     if (!taken.has(d) && Math.abs(d - longRun) >= 2) return d;
   }
@@ -255,7 +281,7 @@ function makeLongRunDay(
     id: makeId(),
     date: date.toISOString(),
     weekNumber: week,
-    dayOfWeek: dow,
+    dayOfWeek: date.getDay(),
     workoutType: WorkoutType.Long,
     distanceMiles: dist,
     workoutDescription: `${dist.toFixed(1)}-mile long run at easy aerobic pace`,
@@ -294,7 +320,7 @@ function makeQualityDay(
     id: makeId(),
     date: date.toISOString(),
     weekNumber: week,
-    dayOfWeek: dow,
+    dayOfWeek: date.getDay(),
     workoutType: type,
     distanceMiles: dist,
     workoutDescription: description,
@@ -314,7 +340,7 @@ function makeEasyDay(
     id: makeId(),
     date: date.toISOString(),
     weekNumber: week,
-    dayOfWeek: dow,
+    dayOfWeek: date.getDay(),
     workoutType: WorkoutType.Easy,
     distanceMiles: dist,
     workoutDescription: `${dist.toFixed(1)}-mile easy run at conversational pace`,
@@ -330,7 +356,7 @@ function makeStrengthDay(date: Date, week: number, dow: number, phase: TrainingP
     id: makeId(),
     date: date.toISOString(),
     weekNumber: week,
-    dayOfWeek: dow,
+    dayOfWeek: date.getDay(),
     workoutType: WorkoutType.Strength,
     durationMinutes: 30,
     workoutDescription: 'Runner-specific strength circuit: single-leg squats, hip bridges, calf raises, deadbugs',
@@ -346,7 +372,7 @@ function makeRestDay(date: Date, week: number, dow: number, phase: TrainingPhase
     id: makeId(),
     date: date.toISOString(),
     weekNumber: week,
-    dayOfWeek: dow,
+    dayOfWeek: date.getDay(),
     workoutType: WorkoutType.Rest,
     workoutDescription: 'Complete rest or gentle walk',
     coachingNotes: 'Rest days are when your body adapts to the training stress. Prioritise sleep, hydration, and nutrition.',
@@ -361,9 +387,11 @@ function makeRestDay(date: Date, week: number, dow: number, phase: TrainingPhase
 function nextMonday(from: Date): Date {
   const d = new Date(from);
   d.setHours(0, 0, 0, 0);
-  const dow = d.getDay(); // 0=Sun, 1=Mon
-  const daysUntil = dow === 1 ? 7 : (8 - dow) % 7 || 7;
-  d.setDate(d.getDate() + daysUntil);
+  const dow = d.getDay(); // 0=Sun, 1=Mon..6=Sat
+  // Roll back to the most recent Monday so today's week is week 1.
+  // Sunday (0) goes back 6 days; Mon (1) stays; Tue (2) goes back 1; etc.
+  const daysBack = dow === 0 ? 6 : dow - 1;
+  d.setDate(d.getDate() - daysBack);
   return d;
 }
 
@@ -394,6 +422,7 @@ export function profileToPlanInput(profile: UserProfile): PlanInput {
     goal: profile.goal,
     goalDate: profile.goalDate ? new Date(profile.goalDate) : undefined,
     daysPerWeek: Math.max(3, Math.min(5, profile.runningDaysPerWeek)),
+    specificRunDays: profile.specificRunDays,
     preferredLongRunDay: profile.preferredLongRunDay,
     strengthDaysPerWeek: Math.max(0, Math.min(3, profile.strengthDaysPerWeek)),
     injuries: profile.injuries,

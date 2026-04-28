@@ -14,14 +14,28 @@ import { PHASE_LABELS, WORKOUT_LABELS, WorkoutType } from '../../src/types/enums
 import type { WorkoutDay } from '../../src/types/models';
 import { workoutIsToday, workoutIsPast, workoutSummaryLine } from '../../src/types/models';
 
+function raceCountdown(goalDate: string): { days: number; label: string } | null {
+  const race = new Date(goalDate);
+  const now  = new Date();
+  race.setHours(0,0,0,0); now.setHours(0,0,0,0);
+  const days = Math.round((race.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (days < 0) return null;
+  if (days === 0) return { days: 0, label: 'Race day! 🎉' };
+  if (days === 1) return { days: 1, label: '1 day to race day' };
+  return { days, label: `${days} days to race day` };
+}
+
 export default function TodayTab() {
   const plan     = useAppStore(s => s.plan);
+  const profile  = useAppStore(s => s.profile);
   const weekNum  = plan ? currentWeekNumber(plan) : 1;
   const today    = plan ? todayWorkout(plan) : null;
   const workouts = plan ? workoutsForWeek(plan, weekNum) : [];
   const doneMiles = plan ? completedMilesThisWeek(plan) : 0;
   const targetMiles = plan ? weeklyMileage(plan, weekNum) : 0;
   const phase    = workouts[0]?.phase;
+
+  const countdown = profile?.goalDate ? raceCountdown(profile.goalDate) : null;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.';
@@ -39,6 +53,14 @@ export default function TodayTab() {
             </Text>
           )}
         </View>
+
+        {/* Race countdown */}
+        {countdown && (
+          <TouchableOpacity style={[styles.raceBanner, countdown.days <= 7 && styles.raceBannerUrgent]}
+            onPress={() => router.push('/edit-race-date')} activeOpacity={0.8}>
+            <Text style={styles.raceBannerText}>🏁  {countdown.label}</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Adaptation banner */}
         {plan && plan.workoutDays.some(w => w.adaptationNote && !w.isCompleted) && (
@@ -212,8 +234,11 @@ function getEmoji(type: WorkoutType) {
 const styles = StyleSheet.create({
   scroll:       { padding: Spacing.xl, paddingBottom: Spacing['4xl'] },
   header:       { marginBottom: Spacing.xl },
-  adaptBanner:  { backgroundColor: Colors.warning + '18', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.warning + '40' },
-  adaptBannerText: { ...Typography.subhead, color: Colors.warning },
+  raceBanner:       { backgroundColor: Colors.accent + '18', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.accent + '40', flexDirection: 'row', alignItems: 'center' },
+  raceBannerUrgent: { backgroundColor: Colors.success + '18', borderColor: Colors.success + '60' },
+  raceBannerText:   { ...Typography.subhead, color: Colors.accent, fontWeight: '600' },
+  adaptBanner:      { backgroundColor: Colors.warning + '18', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.warning + '40' },
+  adaptBannerText:  { ...Typography.subhead, color: Colors.warning },
 
   heroCard:     { backgroundColor: Colors.surface, borderRadius: Radius.xl, overflow: 'hidden', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 8, marginBottom: Spacing.lg },
   heroStrip:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.xl, paddingBottom: Spacing.lg },

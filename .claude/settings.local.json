@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix: remove stale react-native-uuid import from TrainingPlanGenerator *)",
+      "Bash(git commit -m 'fix: upgrade to Expo SDK 52, add missing image assets *)",
+      "Bash(npx expo-env-info *)",
+      "Bash(node -e \"const e=require\\('./node_modules/expo/package.json'\\); console.log\\('Local expo:', e.version\\)\")",
+      "Bash(node -e \"const p=require\\('./node_modules/react-native-reanimated/package.json'\\); console.log\\('version:', p.version\\); console.log\\('peerDeps:', JSON.stringify\\(p.peerDependencies, null, 2\\)\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(node -e \"const pkg = require\\('./node_modules/expo-auth-session/package.json'\\); console.log\\(pkg.version\\)\")",
+      "Bash(node -e \"const m = require\\('./node_modules/expo-auth-session/build/AuthSession'\\); console.log\\(Object.keys\\(m\\)\\)\")"
+    ]
+  }
+}

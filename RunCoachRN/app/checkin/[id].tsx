@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  SafeAreaView, ScrollView, StyleSheet, Text,
-  TouchableOpacity, View, ActivityIndicator,
+  Alert, SafeAreaView, ScrollView, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAppStore } from '../../src/store/useAppStore';
@@ -10,26 +10,45 @@ import { Card } from '../../src/components/ui/Card';
 import { PrimaryButton } from '../../src/components/ui/Buttons';
 import {
   CompletionStatus, EnergyLevel, PainLevel, SleepQuality,
-  SignalLevel,
+  SignalLevel, isRunWorkout,
 } from '../../src/types/enums';
 import type { RunFeedback } from '../../src/types/models';
+import { WorkoutShareCard, useShareWorkout } from '../../src/components/ui/ShareCard';
+import { currentWeekNumber } from '../../src/store/useAppStore';
+import { GhostButton } from '../../src/components/ui/Buttons';
+import { StravaService } from '../../src/services/StravaService';
 
 function makeId() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
 export default function CheckIn() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { addFeedback } = useAppStore();
+  const { addFeedback, updateWorkout, plan } = useAppStore();
+
+  const workout = plan?.workoutDays.find(w => w.id === id);
+  const showRunFields = workout ? isRunWorkout(workout.workoutType) : true;
 
   const [completion, setCompletion] = useState<CompletionStatus>(CompletionStatus.Completed);
   const [effort,     setEffort]     = useState(5);
   const [pain,       setPain]       = useState<PainLevel>(PainLevel.None);
   const [energy,     setEnergy]     = useState<EnergyLevel>(EnergyLevel.Normal);
   const [sleep,      setSleep]      = useState<SleepQuality>(SleepQuality.Ok);
+  const [distance,   setDistance]   = useState('');
+  const [duration,   setDuration]   = useState('');
   const [loading,    setLoading]    = useState(false);
   const [result,     setResult]     = useState<{ level: SignalLevel; messages: string[] } | null>(null);
 
   async function submit() {
     setLoading(true);
+
+    const distMiles  = parseFloat(distance) || undefined;
+    const durationSec = duration ? parseFloat(duration) * 60 : undefined;
+    if (distMiles || durationSec) {
+      await updateWorkout(id!, {
+        actualDistanceMiles:   distMiles,
+        actualDurationSeconds: durationSec,
+      });
+    }
+
     const fb: RunFeedback = {
       id: makeId(),
       workoutDayId: id!,
@@ -59,7 +78,7 @@ export default function CheckIn() {
   }
 
   if (result) {
-    return <ResultScreen level={result.level} messages={result.messages} />;
+    return <ResultScreen level={result.level} messages={result.messages} workoutId={id!} />;
   }
 
   return (
@@ -82,6 +101,37 @@ export default function CheckIn() {
           ]}
           value={completion} onChange={setCompletion}
         />
+
+        {/* Distance + Duration (run workouts only) */}
+        {showRunFields && (
+          <>
+            <SectionLabel title="Distance & time  (optional)" />
+            <View style={styles.logRow}>
+              <View style={styles.logField}>
+                <TextInput
+                  style={styles.logInput}
+                  placeholder="0.0"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={distance}
+                  onChangeText={setDistance}
+                />
+                <Text style={styles.logUnit}>mi</Text>
+              </View>
+              <View style={styles.logField}>
+                <TextInput
+                  style={styles.logInput}
+                  placeholder="0"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  value={duration}
+                  onChangeText={setDuration}
+                />
+                <Text style={styles.logUnit}>min</Text>
+              </View>
+            </View>
+          </>
+        )}
 
         {/* Effort */}
         <SectionLabel title={`Effort level   ${effort} / 10`} />
@@ -134,14 +184,38 @@ export default function CheckIn() {
 
 // ── Result screen ─────────────────────────────────────────
 
-function ResultScreen({ level, messages }: { level: SignalLevel; messages: string[] }) {
+function ResultScreen({ level, messages, workoutId }: { level: SignalLevel; messages: string[]; workoutId: string }) {
+  const plan    = useAppStore(s => s.plan);
+  const workout = plan?.workoutDays.find(w => w.id === workoutId);
+  const weekNum = plan ? currentWeekNumber(plan) : 1;
+  const { ref, share } = useShareWorkout();
+  const [stravaConnected, setStravaConnected] = React.useState(false);
+  const [stravaPushing,   setStravaPushing]   = React.useState(false);
+  const [stravaDone,      setStravaDone]      = React.useState(false);
+
+  React.useEffect(() => {
+    StravaService.loadTokens().then(t => setStravaConnected(!!t));
+  }, []);
+
+  async function pushToStrava() {
+    if (!workout) return;
+    setStravaPushing(true);
+    const result = await StravaService.pushWorkout(workout);
+    setStravaPushing(false);
+    if (result.success) {
+      setStravaDone(true);
+    } else {
+      Alert.alert('Strava upload failed', result.error ?? 'Unknown error');
+    }
+  }
+
   const config: Record<SignalLevel, { emoji: string; title: string; color: string }> = {
-    [SignalLevel.Ok]:      { emoji: '✅', title: 'Looking good',  color: Colors.success },
+    [SignalLevel.Ok]:      { emoji: '✅', title: 'Looking good',   color: Colors.success },
     [SignalLevel.Caution]: { emoji: '⚠️', title: 'Taking it easy', color: Colors.warning },
     [SignalLevel.Concern]: { emoji: '🔶', title: 'Plan adjusted',  color: Colors.warning },
-    [SignalLevel.Danger]:  { emoji: '🛑', title: 'Safety mode',   color: Colors.danger },
+    [SignalLevel.Danger]:  { emoji: '🛑', title: 'Safety mode',    color: Colors.danger },
   };
-  const { emoji, title, color } = config[level];
+  const { emoji, title } = config[level];
 
   return (
     <SafeAreaView style={[CommonStyles.flex1, CommonStyles.center, { backgroundColor: Colors.bg, padding: Spacing.xl }]}>
@@ -154,11 +228,33 @@ function ResultScreen({ level, messages }: { level: SignalLevel; messages: strin
           {m}
         </Text>
       ))}
+
+      {/* Off-screen share card — captured by ViewShot */}
+      {workout && (
+        <View style={{ position: 'absolute', top: -1000, left: 0 }}>
+          <WorkoutShareCard workout={workout} weekNumber={weekNum} totalWeeks={plan?.totalWeeks ?? 8} innerRef={ref} />
+        </View>
+      )}
+
       <PrimaryButton
         label="Done"
         onPress={() => router.replace('/(tabs)')}
         style={{ marginTop: Spacing['3xl'], alignSelf: 'stretch' }}
       />
+      {workout && (
+        <GhostButton
+          label="📤  Share this run"
+          onPress={share}
+          style={{ marginTop: Spacing.sm, alignSelf: 'stretch' }}
+        />
+      )}
+      {workout && stravaConnected && (
+        <GhostButton
+          label={stravaDone ? '✅  Sent to Strava' : stravaPushing ? 'Uploading…' : '🟠  Send to Strava'}
+          onPress={stravaDone ? undefined : pushToStrava}
+          style={{ marginTop: Spacing.sm, alignSelf: 'stretch', opacity: stravaDone ? 0.6 : 1 }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -222,4 +318,8 @@ const styles = StyleSheet.create({
   effortRow:    { flexDirection: 'row', gap: 5 },
   effortBtn:    { flex: 1, height: 42, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
   effortNum:    { ...Typography.caption1, fontWeight: '700' },
+  logRow:       { flexDirection: 'row', gap: Spacing.md },
+  logField:     { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Radius.md, paddingHorizontal: Spacing.md, borderWidth: 1, borderColor: Colors.border },
+  logInput:     { flex: 1, ...Typography.title3, color: Colors.textPrimary, paddingVertical: Spacing.md },
+  logUnit:      { ...Typography.subhead, color: Colors.textSecondary },
 });

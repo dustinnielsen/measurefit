@@ -15,6 +15,7 @@ export interface UserProfile {
   goal: RunningGoal;
   goalDate?: string; // ISO date string
   runningDaysPerWeek: number;
+  specificRunDays?: number[];  // [0=Sun…6=Sat] — explicit day picks; overrides auto-assignment
   preferredLongRunDay: number; // 0=Sun…6=Sat
   strengthDaysPerWeek: number;
   injuries: InjuryType[];
@@ -102,6 +103,7 @@ export interface PlanInput {
   goal: RunningGoal;
   goalDate?: Date;
   daysPerWeek: number;
+  specificRunDays?: number[];
   preferredLongRunDay: number;
   strengthDaysPerWeek: number;
   injuries: InjuryType[];

@@ -45,7 +45,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "RunCoach tracks your run route in the background."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
