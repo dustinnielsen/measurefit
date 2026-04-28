@@ -1,4 +1,3 @@
-import { v4 as uuid } from 'react-native-uuid' // replaced with inline uuid below
 import {
   ExperienceLevel, InjuryRisk, RunningGoal, TrainingPhase, TrainingStyle,
   WorkoutType, experienceUsesPaceZones, goalMaxLongRunMiles,
