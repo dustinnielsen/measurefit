@@ -1,0 +1,65 @@
+name: Build & Deploy to Appetize
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths:
+      - "RunCoach/**"
+  workflow_dispatch:   # allow manual trigger from GitHub UI
+
+jobs:
+  build-and-upload:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate .xcodeproj
+        working-directory: RunCoach
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        working-directory: RunCoach
+        run: |
+          xcodebuild \
+            -project RunCoach.xcodeproj \
+            -scheme RunCoach \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -configuration Debug \
+            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/build" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Zip .app bundle
+        run: |
+          cd build
+          zip -r RunCoach.zip RunCoach.app
+
+      - name: Upload to Appetize.io
+        id: appetize
+        run: |
+          RESPONSE=$(curl -s -X POST https://api.appetize.io/v1/apps \
+            -H "Authorization: Bearer ${{ secrets.APPETIZE_TOKEN }}" \
+            -F "file=@build/RunCoach.zip" \
+            -F "platform=ios" \
+            -F "note=RunCoach - ${{ github.ref_name }} @ ${{ github.sha }}")
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          APP_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('publicKey','ERROR'))")
+          echo "public_key=$APP_URL" >> $GITHUB_OUTPUT
+          echo "### Appetize preview" >> $GITHUB_STEP_SUMMARY
+          echo "https://appetize.io/app/$APP_URL" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment URL on commit
+        if: ${{ steps.appetize.outputs.public_key != 'ERROR' }}
+        run: |
+          echo "App live at: https://appetize.io/app/${{ steps.appetize.outputs.public_key }}"
