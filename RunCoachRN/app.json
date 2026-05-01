@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "RunCoach",
+    "name": "Cinder",
     "slug": "runcoach",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "runcoach",
+    "scheme": "cinder",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
@@ -14,12 +14,13 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.runcoach.app",
+      "bundleIdentifier": "com.dnilly.cinder",
+      "appleTeamId": "9T22DA5396",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "RunCoach uses your location to track your route and calculate distance during runs.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "RunCoach uses your location in the background to keep tracking your run when your screen turns off.",
-        "NSHealthShareUsageDescription": "RunCoach reads your health data to personalise your training plan.",
-        "NSHealthUpdateUsageDescription": "RunCoach saves your completed workouts and routes to Apple Health."
+        "UIBackgroundModes": ["location"],
+        "NSLocationWhenInUseUsageDescription": "Cinder uses your location to track your route and calculate distance during runs.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Cinder uses your location in the background to keep tracking your run when your screen turns off.",
+"ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -30,7 +31,9 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -43,13 +46,22 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "RunCoach tracks your run route in the background."
+          "locationAlwaysAndWhenInUsePermission": "Cinder tracks your run route in the background.",
+          "isIosBackgroundLocationEnabled": true
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bb629011-dba3-4dca-875e-4053306b85d6"
+      }
+    },
+    "owner": "dnilly"
   }
 }
