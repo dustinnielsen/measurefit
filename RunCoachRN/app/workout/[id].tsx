@@ -5,33 +5,54 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as DocumentPicker from 'expo-document-picker';
 import { useAppStore, selectElapsedSeconds } from '../../src/store/useAppStore';
 import { LocationService, formatDuration, formatPace } from '../../src/services/LocationService';
 import { workoutColor, Colors, CommonStyles, Radius, Spacing, Typography } from '../../src/theme';
 import { Card } from '../../src/components/ui/Card';
 import { PrimaryButton, SecondaryButton, GhostButton } from '../../src/components/ui/Buttons';
 import { Pill } from '../../src/components/ui/Pill';
+import { MilestoneModal } from '../../src/components/ui/MilestoneModal';
+import { RouteMap } from '../../src/components/ui/RouteMap';
 import { PHASE_LABELS, WORKOUT_LABELS, WorkoutType, isRunWorkout } from '../../src/types/enums';
 import { deriveWorkoutStructure } from '../../src/types/models';
+import { targetPaceForWorkout, paceZoneLabel } from '../../src/services/PaceService';
+import { getWarmupRoutine } from '../../src/services/WarmupService';
+import { checkNewMilestones, MILESTONES } from '../../src/services/MilestoneService';
+import { parseGPX } from '../../src/services/GPXService';
+import type { Milestone } from '../../src/types/models';
 
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const plan    = useAppStore(s => s.plan);
-  const session = useAppStore(s => s.session);
-  const { startSession, pauseSession, resumeSession, endSession, updateWorkout, updateSessionGPS } = useAppStore();
+  const plan             = useAppStore(s => s.plan);
+  const profile          = useAppStore(s => s.profile);
+  const session          = useAppStore(s => s.session);
+  const morningCheckin   = useAppStore(s => s.morningCheckin);
+  const earnedMilestones = useAppStore(s => s.earnedMilestones);
+  const { startSession, pauseSession, resumeSession, endSession, updateWorkout, updateSessionGPS, earnMilestone } = useAppStore();
 
   const workout = plan?.workoutDays.find(w => w.id === id);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [tick, setTick] = useState(0); // force re-render for elapsed time
+  const [tick, setTick] = useState(0);
+  const [newMilestone, setNewMilestone] = useState<Milestone | null>(null);
+  const [warmupExpanded, setWarmupExpanded] = useState(false);
 
-  const elapsed  = selectElapsedSeconds(session?.workoutId === id ? session : null);
-  const isActive = session?.workoutId === id;
+  const elapsed   = selectElapsedSeconds(session?.workoutId === id ? session : null);
+  const isActive  = session?.workoutId === id;
   const isRunning = isActive && session?.isActive;
 
-  const structure = workout ? deriveWorkoutStructure(workout) : null;
-  const color     = workout ? workoutColor(workout.workoutType) : Colors.accent;
+  const structure  = workout ? deriveWorkoutStructure(workout) : null;
+  const color      = workout ? workoutColor(workout.workoutType) : Colors.accent;
+  const targetPace = (workout && profile)
+    ? targetPaceForWorkout(workout.workoutType, profile.ability, profile.goal)
+    : null;
 
-  // Tick timer every second
+  const todayDate    = new Date().toISOString().slice(0, 10);
+  const todayCheckin = morningCheckin?.date === todayDate ? morningCheckin : null;
+  const warmup       = workout
+    ? getWarmupRoutine(workout.workoutType, todayCheckin?.energyLevel)
+    : null;
+
   useEffect(() => {
     if (isRunning) {
       timerRef.current = setInterval(() => setTick(t => t + 1), 1000);
@@ -54,12 +75,9 @@ export default function WorkoutScreen() {
     startSession(workout!.id);
 
     if (isRunWorkout(workout!.workoutType)) {
-      const granted = await LocationService.requestPermissions();
-      if (granted) {
-        LocationService.startTracking((update) => {
-          updateSessionGPS(update.point, update.distanceMiles, update.currentPaceMinPerMile ?? undefined);
-        });
-      }
+      await LocationService.startTracking((update) => {
+        updateSessionGPS(update.point, update.distanceMiles, update.currentPaceMinPerMile ?? undefined);
+      });
     }
   }
 
@@ -95,12 +113,29 @@ export default function WorkoutScreen() {
     if (LocationService.isTracking()) gpsData = LocationService.stopTracking();
 
     await updateWorkout(workout!.id, {
-      isCompleted:          true,
-      completedAt:          new Date().toISOString(),
+      isCompleted:           true,
+      completedAt:           new Date().toISOString(),
       actualDurationSeconds: finished ? Math.floor((Date.now() - finished.startedAt - finished.totalPausedMs) / 1000) : undefined,
       actualDistanceMiles:   finished?.distanceMiles || gpsData.distanceMiles || undefined,
       route:                 gpsData.points.length > 0 ? gpsData.points : undefined,
     });
+
+    // Check for newly earned milestones
+    const updatedPlan = useAppStore.getState().plan;
+    if (updatedPlan) {
+      const newIds = checkNewMilestones(updatedPlan, earnedMilestones);
+      if (newIds.length > 0) {
+        for (const mid of newIds) {
+          await earnMilestone(mid);
+        }
+        // Show the first new milestone — others will show on next visits
+        const first = MILESTONES[newIds[0]];
+        if (first) {
+          setNewMilestone(first);
+          return; // don't navigate yet — modal will dismiss to checkin
+        }
+      }
+    }
 
     router.replace(`/checkin/${workout!.id}`);
   }
@@ -115,14 +150,83 @@ export default function WorkoutScreen() {
     ]);
   }
 
+  function handleMilestoneDismiss() {
+    setNewMilestone(null);
+    router.replace(`/checkin/${workout!.id}`);
+  }
+
+  async function handleGPXImport() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/gpx+xml', 'text/xml', 'application/xml', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+
+      const file = result.assets[0];
+      const response = await fetch(file.uri);
+      const xml = await response.text();
+      const parsed = parseGPX(xml);
+
+      if (!parsed) {
+        Alert.alert('Could not parse GPX', 'Make sure this is a valid .gpx file from your watch or GPS device.');
+        return;
+      }
+
+      Alert.alert(
+        'Import this run?',
+        `Distance: ${parsed.distanceMiles.toFixed(2)} mi\nDuration: ${formatDuration(parsed.durationSeconds)}${parsed.name ? `\nName: ${parsed.name}` : ''}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Import',
+            onPress: async () => {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              const avgPace = parsed.distanceMiles > 0
+                ? (parsed.durationSeconds / 60) / parsed.distanceMiles
+                : undefined;
+
+              await updateWorkout(workout!.id, {
+                isCompleted:           true,
+                completedAt:           new Date().toISOString(),
+                actualDurationSeconds: parsed.durationSeconds,
+                actualDistanceMiles:   parsed.distanceMiles,
+                averagePaceMinPerMile: avgPace,
+                route:                 parsed.points,
+              });
+
+              const updatedPlan = useAppStore.getState().plan;
+              if (updatedPlan) {
+                const newIds = checkNewMilestones(updatedPlan, earnedMilestones);
+                for (const mid of newIds) await earnMilestone(mid);
+                const first = newIds.length > 0 ? MILESTONES[newIds[0]] : null;
+                if (first) { setNewMilestone(first); return; }
+              }
+              router.replace(`/checkin/${workout!.id}`);
+            },
+          },
+        ],
+      );
+    } catch {
+      Alert.alert('Error', 'Could not read the file. Please try again.');
+    }
+  }
+
   return (
     <SafeAreaView style={[CommonStyles.flex1, { backgroundColor: Colors.bg }]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: color }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>✕</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Text style={styles.backText}>✕</Text>
+            </TouchableOpacity>
+            {!workout.isCompleted && !workout.isSkipped && !isActive && (
+              <TouchableOpacity onPress={() => router.push(`/edit-workout/${id}` as any)}>
+                <Text style={styles.editText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {workout.adaptationNote && <Pill text="Adapted" color="#fff" />}
 
           <View style={styles.headerBody}>
@@ -145,11 +249,23 @@ export default function WorkoutScreen() {
         <View style={{ padding: Spacing.xl, gap: Spacing.md }}>
           {/* Live session stats */}
           {isActive && (
-            <View style={[styles.liveCard, { borderColor: color + '50' }]}>
-              <LiveStat label="Time"     value={formatDuration(elapsed)} />
-              <LiveStat label="Distance" value={session!.distanceMiles > 0 ? `${session!.distanceMiles.toFixed(2)} mi` : '--'} />
-              <LiveStat label="Pace"     value={formatPace(session!.currentPaceMinPerMile)} suffix="/mi" />
-            </View>
+            <>
+              <View style={[styles.liveCard, { borderColor: color + '50' }]}>
+                <LiveStat label="Time"     value={formatDuration(elapsed)} />
+                <LiveStat label="Distance" value={session!.distanceMiles > 0 ? `${session!.distanceMiles.toFixed(2)} mi` : '--'} />
+                <LiveStat label="Pace"     value={formatPace(session!.currentPaceMinPerMile)} suffix="/mi" />
+              </View>
+              {targetPace && (
+                <View style={styles.targetPaceBar}>
+                  <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+                    {paceZoneLabel(workout.workoutType)}
+                  </Text>
+                  <Text style={[Typography.subhead, { color, fontWeight: '700' }]}>
+                    {targetPace[0]}–{targetPace[1]} /mi
+                  </Text>
+                </View>
+              )}
+            </>
           )}
 
           {/* Adaptation banner */}
@@ -166,6 +282,46 @@ export default function WorkoutScreen() {
             </Card>
           )}
 
+          {/* Pre-run warmup (only before workout starts) */}
+          {!isActive && !workout.isCompleted && !workout.isSkipped &&
+           warmup && warmup.steps.length > 0 && workout.workoutType !== WorkoutType.Rest && (
+            <TouchableOpacity
+              style={styles.warmupHeader}
+              onPress={() => setWarmupExpanded(e => !e)}
+              activeOpacity={0.8}
+            >
+              <View style={CommonStyles.row}>
+                <Text style={{ fontSize: 20, marginRight: Spacing.sm }}>🔥</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[Typography.headline, { color: Colors.textPrimary }]}>{warmup.title}</Text>
+                  <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+                    {warmup.totalMinutes} min · {warmup.steps.length} steps
+                  </Text>
+                </View>
+                <Text style={[Typography.subhead, { color: Colors.accent }]}>
+                  {warmupExpanded ? 'Hide' : 'Show'}
+                </Text>
+              </View>
+
+              {warmupExpanded && (
+                <View style={styles.warmupSteps}>
+                  {warmup.steps.map((step, i) => (
+                    <View key={i} style={styles.warmupStep}>
+                      <View style={styles.warmupNum}>
+                        <Text style={[Typography.caption1, { color: Colors.accent, fontWeight: '700' }]}>{i + 1}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[Typography.subhead, { color: Colors.textPrimary, fontWeight: '600' }]}>{step.name}</Text>
+                        <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>{step.detail}</Text>
+                      </View>
+                      <Text style={[Typography.caption1, { color: Colors.textTertiary }]}>{step.duration}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+
           {/* Workout structure */}
           {structure && (
             <>
@@ -180,6 +336,11 @@ export default function WorkoutScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.effortLabel}>EFFORT TARGET</Text>
                   <Text style={[Typography.subhead, { color: Colors.textPrimary }]}>{structure.effortCue}</Text>
+                  {targetPace && (
+                    <Text style={[Typography.caption1, { color, fontWeight: '600', marginTop: 4 }]}>
+                      {targetPace[0]}–{targetPace[1]} /mi
+                    </Text>
+                  )}
                 </View>
               </Card>
 
@@ -190,6 +351,32 @@ export default function WorkoutScreen() {
                 </Card>
               ) : null}
             </>
+          )}
+
+          {/* Post-workout cool-down (only after active session) */}
+          {workout.isCompleted && warmup && warmup.cooldownSteps.length > 0 && (
+            <Card>
+              <Text style={[Typography.label, { color: Colors.long, marginBottom: Spacing.md }]}>🌬️  COOL-DOWN</Text>
+              {warmup.cooldownSteps.map((step, i) => (
+                <View key={i} style={[styles.warmupStep, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.separator, paddingTop: Spacing.sm }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[Typography.subhead, { color: Colors.textPrimary, fontWeight: '600' }]}>{step.name}</Text>
+                    <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>{step.detail}</Text>
+                  </View>
+                  <Text style={[Typography.caption1, { color: Colors.textTertiary }]}>{step.duration}</Text>
+                </View>
+              ))}
+            </Card>
+          )}
+
+          {/* Saved route map */}
+          {workout.isCompleted && workout.route && workout.route.length > 1 && (
+            <Card style={{ padding: 0, overflow: 'hidden' }}>
+              <Text style={[Typography.label, { color: Colors.textSecondary, margin: Spacing.md, marginBottom: Spacing.sm }]}>
+                YOUR ROUTE
+              </Text>
+              <RouteMap route={workout.route} />
+            </Card>
           )}
         </View>
       </ScrollView>
@@ -217,6 +404,9 @@ export default function WorkoutScreen() {
         ) : (
           <View style={{ gap: Spacing.sm }}>
             <PrimaryButton label="Start Workout" onPress={handleStart} size="lg" color={color} />
+            {isRunWorkout(workout.workoutType) && (
+              <SecondaryButton label="📡  Import from Watch (.gpx)" onPress={handleGPXImport} size="lg" />
+            )}
             <GhostButton label="Mark Complete Without Timer" onPress={confirmComplete} />
           </View>
         )}
@@ -225,6 +415,9 @@ export default function WorkoutScreen() {
             style={{ marginTop: 4 }} color={Colors.textTertiary} />
         )}
       </View>
+
+      {/* Milestone celebration modal */}
+      <MilestoneModal milestone={newMilestone} onDismiss={handleMilestoneDismiss} />
     </SafeAreaView>
   );
 }
@@ -271,25 +464,33 @@ const WORKOUT_EMOJIS: Record<WorkoutType, string> = {
 };
 
 // ── Styles ────────────────────────────────────────────────
-const { long: _long, ..._ } = Colors; // suppress unused import warning
 
 const styles = StyleSheet.create({
-  header:      { padding: Spacing.xl, paddingTop: Spacing.xxl },
-  backBtn:     { alignSelf: 'flex-start', marginBottom: Spacing.md },
-  backText:    { ...Typography.title3, color: 'rgba(255,255,255,0.85)' },
-  headerBody:  { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.md },
-  headerTitle: { ...Typography.largeTitle, color: '#fff' },
-  headerSub:   { ...Typography.subhead, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
-  statsRow:    { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
-  statChip:    { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, alignItems: 'center' },
-  statValue:   { ...Typography.subhead, fontWeight: '700', color: '#fff' },
-  statLabel:   { ...Typography.caption2, color: 'rgba(255,255,255,0.75)' },
+  header:        { padding: Spacing.xl, paddingTop: Spacing.xxl },
+  headerTopRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  backBtn:       {},
+  backText:      { ...Typography.title3, color: 'rgba(255,255,255,0.85)' },
+  editText:      { ...Typography.subhead, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  headerBody:    { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.md },
+  headerTitle:   { ...Typography.largeTitle, color: '#fff' },
+  headerSub:     { ...Typography.subhead, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  statsRow:      { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  statChip:      { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, alignItems: 'center' },
+  statValue:     { ...Typography.subhead, fontWeight: '700', color: '#fff' },
+  statLabel:     { ...Typography.caption2, color: 'rgba(255,255,255,0.75)' },
 
-  liveCard:    { flexDirection: 'row', padding: Spacing.lg, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1.5, gap: Spacing.sm },
+  liveCard:      { flexDirection: 'row', padding: Spacing.lg, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1.5, gap: Spacing.sm },
+  targetPaceBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, backgroundColor: Colors.surface, borderRadius: Radius.md },
+
   adaptCard:   { padding: Spacing.lg, backgroundColor: Colors.warning + '10', borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.warning + '40' },
   adaptTitle:  { ...Typography.headline, color: Colors.warning, marginBottom: 4 },
   adaptOrig:   { ...Typography.caption1, color: Colors.textSecondary, textDecorationLine: 'line-through', marginBottom: 2 },
   adaptNote:   { ...Typography.footnote, color: Colors.textSecondary },
+
+  warmupHeader: { backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.lg, borderLeftWidth: 3, borderLeftColor: Colors.warning },
+  warmupSteps:  { marginTop: Spacing.md, gap: Spacing.sm },
+  warmupStep:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 4 },
+  warmupNum:    { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.accent + '20', alignItems: 'center', justifyContent: 'center' },
 
   effortCard:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   effortIcon:  { width: 48, height: 48, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },

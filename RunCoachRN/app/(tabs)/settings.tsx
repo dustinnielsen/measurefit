@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
-  Alert, SafeAreaView, ScrollView, StyleSheet,
+  Alert, SafeAreaView, ScrollView, StyleSheet, TextInput,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAppStore, currentWeekNumber } from '../../src/store/useAppStore';
-import { HealthKitService } from '../../src/services/HealthKitService';
 import { StravaService, type StravaTokens } from '../../src/services/StravaService';
 import { Colors, CommonStyles, Radius, Spacing, Typography } from '../../src/theme';
 import { Card } from '../../src/components/ui/Card';
@@ -14,12 +14,15 @@ import {
 } from '../../src/types/enums';
 
 export default function SettingsTab() {
-  const { profile, plan, clearAllData, generateAndSavePlan } = useAppStore();
+  const { profile, plan, clearAllData, generateAndSavePlan, resetProgress, setProfile } = useAppStore();
+  const races = useAppStore(s => s.races);
   const [stravaTokens, setStravaTokens] = useState<StravaTokens | null>(null);
+  const [goalWeightInput, setGoalWeightInput] = useState('');
+  const [editingGoalWeight, setEditingGoalWeight] = useState(false);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     StravaService.loadTokens().then(setStravaTokens);
-  }, []);
+  }, []));
 
   function confirmRegen() {
     Alert.alert(
@@ -33,6 +36,39 @@ export default function SettingsTab() {
         }},
       ],
     );
+  }
+
+  function confirmResetProgress() {
+    Alert.alert(
+      'Reset all progress?',
+      'All completed workouts and check-in history will be cleared. Your plan and profile stay the same.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset', style: 'destructive', onPress: async () => {
+          await resetProgress();
+          Alert.alert('Done', 'Progress cleared. Fresh start!');
+        }},
+      ],
+    );
+  }
+
+  async function setWeightUnit(unit: 'lbs' | 'kg') {
+    if (!profile) return;
+    await setProfile({ ...profile, weightUnit: unit });
+  }
+
+  async function saveGoalWeight() {
+    if (!profile) return;
+    const weightUnit = profile.weightUnit ?? 'lbs';
+    const parsed = parseFloat(goalWeightInput);
+    if (isNaN(parsed) || parsed <= 0) {
+      Alert.alert('Invalid', 'Enter a valid weight.');
+      return;
+    }
+    const inLbs = weightUnit === 'kg' ? parsed * 2.20462 : parsed;
+    await setProfile({ ...profile, goalWeight: inLbs });
+    setEditingGoalWeight(false);
+    setGoalWeightInput('');
   }
 
   function confirmDeleteAll() {
@@ -96,31 +132,6 @@ export default function SettingsTab() {
           </>
         )}
 
-        {/* Apple Health */}
-        <SectionTitle title="Apple Health" />
-        <Card>
-          <View style={[CommonStyles.rowBetween]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[Typography.subhead, { fontWeight: '600', color: Colors.textPrimary }]}>
-                Connect Apple Health
-              </Text>
-              <Text style={[Typography.footnote, { color: Colors.textSecondary, marginTop: 2 }]}>
-                {HealthKitService.statusMessage()}
-              </Text>
-            </View>
-            <View style={[styles.hkBadge, { backgroundColor: HealthKitService.isAvailable() ? Colors.success + '20' : Colors.tertiary }]}>
-              <Text style={[Typography.caption1, { color: HealthKitService.isAvailable() ? Colors.success : Colors.textSecondary, fontWeight: '600' }]}>
-                {HealthKitService.isAvailable() ? 'ON' : 'Soon'}
-              </Text>
-            </View>
-          </View>
-          {!HealthKitService.isAvailable() && (
-            <Text style={[Typography.caption1, { color: Colors.textTertiary, marginTop: Spacing.sm }]}>
-              Requires the full EAS build with Apple Developer account ($99/yr).
-              All training features work without it.
-            </Text>
-          )}
-        </Card>
 
         {/* Strava */}
         <SectionTitle title="Strava" />
@@ -161,6 +172,86 @@ export default function SettingsTab() {
           </>
         )}
 
+        {/* Weight tracking */}
+        <SectionTitle title="Weight Tracking" />
+        <Card style={{ marginBottom: Spacing.sm }}>
+          <View style={[CommonStyles.rowBetween, { paddingVertical: Spacing.sm }]}>
+            <Text style={[Typography.subhead, { color: Colors.textSecondary }]}>Unit</Text>
+            <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+              {(['lbs', 'kg'] as const).map(u => (
+                <TouchableOpacity
+                  key={u}
+                  style={[styles.unitChip, (profile.weightUnit ?? 'lbs') === u && styles.unitChipActive]}
+                  onPress={() => setWeightUnit(u)}
+                >
+                  <Text style={[Typography.caption1, { color: (profile.weightUnit ?? 'lbs') === u ? Colors.accent : Colors.textSecondary, fontWeight: '600' }]}>
+                    {u}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={CommonStyles.divider} />
+          <View style={[CommonStyles.rowBetween, { paddingVertical: Spacing.sm }]}>
+            <Text style={[Typography.subhead, { color: Colors.textSecondary }]}>Goal Weight</Text>
+            {editingGoalWeight ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                <TextInput
+                  style={styles.inlineInput}
+                  value={goalWeightInput}
+                  onChangeText={setGoalWeightInput}
+                  placeholder={profile.weightUnit === 'kg' ? '70' : '155'}
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                />
+                <TouchableOpacity onPress={saveGoalWeight}>
+                  <Text style={[Typography.caption1, { color: Colors.accent, fontWeight: '700' }]}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => { setEditingGoalWeight(true); setGoalWeightInput(''); }}>
+                <Text style={[Typography.subhead, { color: Colors.textPrimary, fontWeight: '500' }]}>
+                  {profile.goalWeight
+                    ? `${((profile.weightUnit ?? 'lbs') === 'kg' ? profile.goalWeight / 2.20462 : profile.goalWeight).toFixed(1)} ${profile.weightUnit ?? 'lbs'}`
+                    : 'Set goal'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Card>
+
+        {/* Races */}
+        <SectionTitle title="Races" />
+        <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/races' as any)}>
+          <View style={CommonStyles.rowBetween}>
+            <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+              🏅  My Races
+            </Text>
+            <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+              {races.length === 0 ? 'None' : `${races.length} race${races.length > 1 ? 's' : ''}`}  ›
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <SectionTitle title="Training Tools" />
+        <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/morning-checkin' as any)}>
+          <View style={CommonStyles.rowBetween}>
+            <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+              🌅  Morning Check-In
+            </Text>
+            <Text style={{ color: Colors.textTertiary }}>›</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/shoes' as any)}>
+          <View style={CommonStyles.rowBetween}>
+            <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+              👟  Shoe Tracker
+            </Text>
+            <Text style={{ color: Colors.textTertiary }}>›</Text>
+          </View>
+        </TouchableOpacity>
+
         <SectionTitle title="Plan" />
         <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/edit-race-date')}>
           <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
@@ -177,6 +268,11 @@ export default function SettingsTab() {
             Regenerate Plan
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.actionRow} onPress={confirmResetProgress}>
+          <Text style={[Typography.subhead, { color: Colors.warning, fontWeight: '600' }]}>
+            Reset All Progress
+          </Text>
+        </TouchableOpacity>
 
         <SectionTitle title="Danger Zone" />
         <TouchableOpacity style={styles.actionRow} onPress={confirmDeleteAll}>
@@ -188,7 +284,7 @@ export default function SettingsTab() {
         {/* About */}
         <SectionTitle title="About" />
         <Card>
-          <Row label="App" value="RunCoach" />
+          <Row label="App" value="Cinder" />
           <Divider />
           <Row label="Version" value="1.0.0" />
         </Card>
@@ -227,4 +323,8 @@ const styles = StyleSheet.create({
   scroll:     { padding: Spacing.xl, paddingBottom: Spacing['4xl'] },
   actionRow:  { backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.lg },
   hkBadge:    { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full },
+
+  unitChip:       { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: Colors.surfaceAlt, borderWidth: 1.5, borderColor: Colors.border },
+  unitChipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '12' },
+  inlineInput:    { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.sm, paddingVertical: 4, color: Colors.textPrimary, fontSize: 15, minWidth: 60, textAlign: 'right' },
 });
