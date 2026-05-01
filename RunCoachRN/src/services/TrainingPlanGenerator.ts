@@ -2,6 +2,7 @@ import {
   ExperienceLevel, InjuryRisk, RunningGoal, TrainingPhase, TrainingStyle,
   WorkoutType, experienceUsesPaceZones, goalMaxLongRunMiles,
   goalNeedsTaper, goalPeakMileageRange, injuryRiskMaxIncrease, isHardWorkout,
+  isUltraGoal,
 } from '../types/enums';
 import type { PlanInput, TrainingPlan, WorkoutDay } from '../types/models';
 
@@ -35,7 +36,8 @@ function computeTotalWeeks(input: PlanInput): number {
     const startDate = nextMonday(new Date());
     const ms = input.goalDate.getTime() - startDate.getTime();
     const weeks = Math.round(ms / (7 * 24 * 60 * 60 * 1000));
-    return Math.max(4, Math.min(24, weeks));
+    const maxWeeks = isUltraGoal(input.goal) ? 36 : 24;
+    return Math.max(4, Math.min(maxWeeks, weeks));
   }
   switch (input.goal) {
     case RunningGoal.GetFit:       return 12;
@@ -44,6 +46,8 @@ function computeTotalWeeks(input: PlanInput): number {
     case RunningGoal.HalfMarathon: return 16;
     case RunningGoal.Marathon:     return 20;
     case RunningGoal.FasterMile:   return 10;
+    case RunningGoal.Ultra50:      return 24;
+    case RunningGoal.Ultra100:     return 32;
     default:                       return 12;
   }
 }
@@ -58,7 +62,9 @@ function computeWeeklyVolumes(input: PlanInput, totalWeeks: number): number[] {
   const peak = Math.min(targetPeak * styleMultiplier, peakHigh);
 
   const start = Math.max(input.weeklyMileage, 10);
-  const taperWeeks = goalNeedsTaper(input.goal) ? (input.goal === RunningGoal.Marathon ? 3 : 2) : 0;
+  const taperWeeks = goalNeedsTaper(input.goal)
+    ? isUltraGoal(input.goal) ? 3 : input.goal === RunningGoal.Marathon ? 3 : 2
+    : 0;
   const buildWeeks = totalWeeks - taperWeeks;
 
   const volumes: number[] = [];
@@ -209,21 +215,33 @@ function buildAllWorkoutDays(
     const longDist = Math.min(maxLongRun, Math.round(weekMiles * 0.30 * 2) / 2);
     // Quality: ~20% of weekly volume
     const qualDist = Math.round(weekMiles * 0.20 * 2) / 2;
-    // Easy: remaining split across easy days
-    const easyTotal = weekMiles - longDist - (isDeload ? 0 : qualDist);
-    const easyDist = slots.easy.length > 0
-      ? Math.round((easyTotal / slots.easy.length) * 2) / 2
+
+    // Determine whether quality slot becomes an extra easy day
+    const skipQuality = isDeload || (input.experienceLevel === ExperienceLevel.Beginner && w <= 4);
+    const qualitySlotIsUserPicked = !!(input.specificRunDays && input.specificRunDays.length >= 2);
+    const qualityBecomesEasy = skipQuality && qualitySlotIsUserPicked;
+
+    // Easy: remaining mileage split across all easy slots (including quality slot if it becomes easy)
+    const easySlotCount = slots.easy.length + (qualityBecomesEasy ? 1 : 0);
+    const easyTotal = weekMiles - longDist - (skipQuality ? 0 : qualDist);
+    const easyPerRun = easySlotCount > 0
+      ? Math.round((easyTotal / easySlotCount) * 2) / 2
       : 0;
+    // Cap each easy run so it never exceeds the long run
+    const easyDist = Math.round(Math.min(easyPerRun, Math.max(longDist * 0.85, 1)) * 2) / 2;
 
     // Long run day
     const longDate = addDays(weekStart, slots.longRun);
     days.push(makeLongRunDay(input, longDate, w, slots.longRun, longDist, phase, usePaceZones));
 
-    // Quality day (skip in deload and first 4 beginner weeks)
-    const skipQuality = isDeload || (input.experienceLevel === ExperienceLevel.Beginner && w <= 4);
+    // Quality day
     if (!skipQuality) {
       const qualDate = addDays(weekStart, slots.quality);
       days.push(makeQualityDay(input, qualDate, w, slots.quality, qualDist, phase, usePaceZones));
+    } else if (qualityBecomesEasy) {
+      // User explicitly picked this day — easy run instead of rest
+      const qualDate = addDays(weekStart, slots.quality);
+      days.push(makeEasyDay(input, qualDate, w, slots.quality, easyDist, phase, usePaceZones));
     }
 
     // Easy days
@@ -238,12 +256,12 @@ function buildAllWorkoutDays(
       days.push(makeStrengthDay(strDate, w, slot, phase));
     }
 
-    // Fill remaining days as rest
-    const scheduledSlots = new Set([
+    // Fill remaining days as rest — quality slot is always scheduled (run or easy)
+    const scheduledSlots = new Set<number>([
       slots.longRun,
+      slots.quality,
       ...slots.easy,
       ...slots.strength,
-      ...(skipQuality ? [] : [slots.quality]),
     ]);
     for (let d = 0; d < 7; d++) {
       if (!scheduledSlots.has(d)) {
@@ -259,7 +277,9 @@ function buildAllWorkoutDays(
 
 function computePhase(week: number, totalWeeks: number, goal: RunningGoal): TrainingPhase {
   if (week % 4 === 0) return TrainingPhase.Deload;
-  const taperWeeks = goalNeedsTaper(goal) ? (goal === RunningGoal.Marathon ? 3 : 2) : 0;
+  const taperWeeks = goalNeedsTaper(goal)
+    ? isUltraGoal(goal) ? 3 : goal === RunningGoal.Marathon ? 3 : 2
+    : 0;
   if (week > totalWeeks - taperWeeks) return TrainingPhase.Taper;
   const buildStart = Math.ceil(totalWeeks * 0.35);
   const peakStart = Math.ceil(totalWeeks * 0.70);
@@ -277,6 +297,9 @@ function makeLongRunDay(
   const effort = usePaceZones
     ? 'Zone 2 — 70–75% max HR. Conversational the whole way.'
     : 'Effort 5–6/10. You should be able to hold a conversation throughout.';
+  const ultraNote = isUltraGoal(input.goal)
+    ? ' Practice hiking steep sections — power hiking is a legitimate ultra strategy. Eat and drink every 20–30 min and practice your race-day nutrition plan.'
+    : '';
   return {
     id: makeId(),
     date: date.toISOString(),
@@ -285,7 +308,7 @@ function makeLongRunDay(
     workoutType: WorkoutType.Long,
     distanceMiles: dist,
     workoutDescription: `${dist.toFixed(1)}-mile long run at easy aerobic pace`,
-    coachingNotes: `The long run is the cornerstone of your training. ${effort} Don't go faster — the goal is time on feet, not speed.`,
+    coachingNotes: `The long run is the cornerstone of your training. ${effort} Don't go faster — the goal is time on feet, not speed.${ultraNote}`,
     phase,
     isCompleted: false,
     isSkipped: false,
@@ -296,7 +319,25 @@ function makeQualityDay(
   input: PlanInput, date: Date, week: number, dow: number,
   dist: number, phase: TrainingPhase, usePaceZones: boolean,
 ): WorkoutDay {
-  // Alternate between intervals and tempo based on week
+  // Ultra training: back-to-back medium-long runs instead of speed work
+  if (isUltraGoal(input.goal)) {
+    const effort = usePaceZones ? 'Zone 2 (70–75% max HR)' : 'effort 5–6/10';
+    return {
+      id: makeId(),
+      date: date.toISOString(),
+      weekNumber: week,
+      dayOfWeek: date.getDay(),
+      workoutType: WorkoutType.Long,
+      distanceMiles: dist,
+      workoutDescription: `${dist.toFixed(1)}-mile back-to-back long run at easy aerobic pace`,
+      coachingNotes: `This is your second long run of the weekend — the key ultra training stimulus. Running on tired legs teaches your body to keep moving when everything hurts. ${effort}. Hike the hills, eat and drink consistently, and practice your race nutrition.`,
+      phase,
+      isCompleted: false,
+      isSkipped: false,
+    };
+  }
+
+  // Standard: alternate between intervals and tempo
   const useIntervals = week % 2 === 1;
   const type = useIntervals ? WorkoutType.Intervals : WorkoutType.Tempo;
 

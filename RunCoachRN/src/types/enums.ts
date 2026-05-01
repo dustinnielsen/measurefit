@@ -11,6 +11,8 @@ export enum RunningGoal {
   HalfMarathon = 'halfMarathon',
   Marathon = 'marathon',
   FasterMile = 'fasterMile',
+  Ultra50 = 'ultra50',
+  Ultra100 = 'ultra100',
 }
 
 export enum TrainingStyle {
@@ -116,6 +118,8 @@ export const GOAL_LABELS: Record<RunningGoal, string> = {
   [RunningGoal.HalfMarathon]: 'Half Marathon',
   [RunningGoal.Marathon]: 'Marathon',
   [RunningGoal.FasterMile]: 'Faster Mile',
+  [RunningGoal.Ultra50]: '50-Mile Ultra',
+  [RunningGoal.Ultra100]: '100-Mile Ultra',
 };
 
 export const GOAL_EMOJIS: Record<RunningGoal, string> = {
@@ -125,6 +129,8 @@ export const GOAL_EMOJIS: Record<RunningGoal, string> = {
   [RunningGoal.HalfMarathon]: '🏅',
   [RunningGoal.Marathon]: '🏆',
   [RunningGoal.FasterMile]: '⚡️',
+  [RunningGoal.Ultra50]: '🌄',
+  [RunningGoal.Ultra100]: '🦅',
 };
 
 export const WORKOUT_LABELS: Record<WorkoutType, string> = {
@@ -221,6 +227,8 @@ export function goalPeakMileageRange(goal: RunningGoal): [number, number] {
     [RunningGoal.HalfMarathon]: [35, 45],
     [RunningGoal.Marathon]: [45, 55],
     [RunningGoal.FasterMile]: [20, 30],
+    [RunningGoal.Ultra50]:  [55, 70],
+    [RunningGoal.Ultra100]: [65, 80],
   };
   return ranges[goal];
 }
@@ -233,12 +241,19 @@ export function goalMaxLongRunMiles(goal: RunningGoal): number {
     [RunningGoal.HalfMarathon]: 14,
     [RunningGoal.Marathon]: 22,
     [RunningGoal.FasterMile]: 8,
+    [RunningGoal.Ultra50]:  32,
+    [RunningGoal.Ultra100]: 40,
   };
   return max[goal];
 }
 
 export function goalNeedsTaper(goal: RunningGoal): boolean {
-  return [RunningGoal.HalfMarathon, RunningGoal.Marathon].includes(goal);
+  return [RunningGoal.HalfMarathon, RunningGoal.Marathon,
+          RunningGoal.Ultra50, RunningGoal.Ultra100].includes(goal);
+}
+
+export function isUltraGoal(goal: RunningGoal): boolean {
+  return goal === RunningGoal.Ultra50 || goal === RunningGoal.Ultra100;
 }
 
 export function injuryRiskMaxIncrease(risk: InjuryRisk, base: number): number {

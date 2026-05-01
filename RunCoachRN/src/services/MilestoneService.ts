@@ -107,6 +107,7 @@ export function predictRaceTime(
   // Riegel formula: T2 = T1 × (D2/D1)^1.06
   const goalDistances: Record<string, number> = {
     FiveK: 3.107, TenK: 6.214, HalfMarathon: 13.1, Marathon: 26.2, FasterMile: 1,
+    Ultra50: 50, Ultra100: 100,
   };
   const target = goalDistances[goalDistanceLabel];
   if (!target) return null;
