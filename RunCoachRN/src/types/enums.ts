@@ -28,6 +28,7 @@ export enum WorkoutType {
   Rest = 'rest',
   Strength = 'strength',
   Mobility = 'mobility',
+  Walk = 'walk',
 }
 
 export enum InjuryType {
@@ -135,6 +136,7 @@ export const WORKOUT_LABELS: Record<WorkoutType, string> = {
   [WorkoutType.Rest]: 'Rest',
   [WorkoutType.Strength]: 'Strength',
   [WorkoutType.Mobility]: 'Mobility',
+  [WorkoutType.Walk]: 'Walk',
 };
 
 export const WORKOUT_EMOJIS: Record<WorkoutType, string> = {
@@ -146,6 +148,7 @@ export const WORKOUT_EMOJIS: Record<WorkoutType, string> = {
   [WorkoutType.Rest]: '😴',
   [WorkoutType.Strength]: '🏋️',
   [WorkoutType.Mobility]: '🧘',
+  [WorkoutType.Walk]: '🚶',
 };
 
 export const PHASE_LABELS: Record<TrainingPhase, string> = {
@@ -188,7 +191,7 @@ export function isHardWorkout(type: WorkoutType): boolean {
 
 export function isRunWorkout(type: WorkoutType): boolean {
   return [WorkoutType.Easy, WorkoutType.Long, WorkoutType.Tempo,
-          WorkoutType.Intervals, WorkoutType.Strides].includes(type);
+          WorkoutType.Intervals, WorkoutType.Strides, WorkoutType.Walk].includes(type);
 }
 
 export function painRank(level: PainLevel): number {

@@ -23,6 +23,35 @@ export interface UserProfile {
   injuryRisk: InjuryRisk;
   createdAt: string;
   updatedAt: string;
+  // Weight tracking
+  weightUnit?: 'lbs' | 'kg';
+  goalWeight?: number; // stored in lbs internally
+}
+
+// MARK: - Weight tracking
+
+export interface WeightEntry {
+  id: string;
+  date: string;      // YYYY-MM-DD
+  weight: number;    // always stored in lbs internally
+  timestamp: number; // Date.now()
+}
+
+// MARK: - Races
+
+export interface Race {
+  id: string;
+  name: string;
+  date: string;            // YYYY-MM-DD
+  distanceLabel: string;   // '5K', '10K', 'Half Marathon', 'Marathon', 'Other'
+  customDistance?: string; // when distanceLabel is 'Other'
+  city?: string;
+  state?: string;
+  bibNumber?: string;
+  isCompleted: boolean;
+  finishTimeSecs?: number; // actual finish time in seconds
+  notes?: string;
+  createdAt: string;
 }
 
 export interface TrainingPlan {
@@ -58,6 +87,9 @@ export interface WorkoutDay {
   actualDistanceMiles?: number;
   actualDurationSeconds?: number;
   averagePaceMinPerMile?: number;
+  estimatedCalories?: number;
+  // Manual/ad-hoc workout (not part of generated plan)
+  isManual?: boolean;
 }
 
 export interface GPSPoint {
@@ -90,6 +122,44 @@ export interface WorkoutSession {
   distanceMiles: number;
   currentPaceMinPerMile?: number;
   isActive: boolean;
+}
+
+// MARK: - Shoe tracker
+
+export interface Shoe {
+  id: string;
+  brand: string;
+  name: string;
+  totalMiles: number;
+  addedAt: string;       // ISO date
+  retired: boolean;
+  retiredAt?: string;
+  alertMiles: number;    // warn when totalMiles exceeds this
+}
+
+// MARK: - Morning check-in / Ember Score
+
+export interface MorningCheckin {
+  date: string;          // YYYY-MM-DD
+  sleepQuality: 1 | 2 | 3;   // 1=poor 2=ok 3=great
+  energyLevel: 1 | 2 | 3;    // 1=low  2=normal 3=high
+  stressLevel: 1 | 2 | 3;    // 1=low  2=med  3=high
+}
+
+// MARK: - Milestones
+
+export type MilestoneId =
+  | 'first_run'
+  | 'miles_10' | 'miles_50' | 'miles_100' | 'miles_250' | 'miles_500'
+  | 'streak_2' | 'streak_4' | 'streak_8' | 'streak_12'
+  | 'first_long_run'
+  | 'plan_complete';
+
+export interface Milestone {
+  id: MilestoneId;
+  title: string;
+  description: string;
+  emoji: string;
 }
 
 // MARK: - Plan generation types
@@ -214,6 +284,13 @@ export function deriveWorkoutStructure(workout: WorkoutDay): WorkoutStructure {
         mainSet: workout.workoutDescription || 'Full-body mobility routine targeting running muscles',
         cooldown: 'Relax in any tight areas and breathe deeply',
         effortCue: 'Gentle effort  ·  Never force range of motion',
+      };
+    case WorkoutType.Walk:
+      return {
+        warmup: '',
+        mainSet: workout.workoutDescription || `Walk ${distStr} at a comfortable pace — enjoy the fresh air.`,
+        cooldown: '2–3 min gentle stretching for calves and hip flexors',
+        effortCue: 'Effort 2–3 / 10  ·  Conversational and relaxed',
       };
     case WorkoutType.Rest:
       return {

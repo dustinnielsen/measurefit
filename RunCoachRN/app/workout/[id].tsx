@@ -20,6 +20,7 @@ import { targetPaceForWorkout, paceZoneLabel } from '../../src/services/PaceServ
 import { getWarmupRoutine } from '../../src/services/WarmupService';
 import { checkNewMilestones, MILESTONES } from '../../src/services/MilestoneService';
 import { parseGPX } from '../../src/services/GPXService';
+import { estimateCalories } from '../../src/services/CalorieService';
 import type { Milestone } from '../../src/types/models';
 
 export default function WorkoutScreen() {
@@ -112,12 +113,21 @@ export default function WorkoutScreen() {
     let gpsData = { points: [], distanceMiles: 0 } as any;
     if (LocationService.isTracking()) gpsData = LocationService.stopTracking();
 
+    const durationSecs = finished
+      ? Math.floor((Date.now() - finished.startedAt - finished.totalPausedMs) / 1000)
+      : undefined;
+    const weightLbs = useAppStore.getState().weightEntries.slice(-1)[0]?.weight ?? 155;
+    const calories = durationSecs && workout
+      ? estimateCalories(workout.workoutType, durationSecs, weightLbs)
+      : undefined;
+
     await updateWorkout(workout!.id, {
       isCompleted:           true,
       completedAt:           new Date().toISOString(),
-      actualDurationSeconds: finished ? Math.floor((Date.now() - finished.startedAt - finished.totalPausedMs) / 1000) : undefined,
+      actualDurationSeconds: durationSecs,
       actualDistanceMiles:   finished?.distanceMiles || gpsData.distanceMiles || undefined,
       route:                 gpsData.points.length > 0 ? gpsData.points : undefined,
+      estimatedCalories:     calories,
     });
 
     // Check for newly earned milestones
@@ -185,6 +195,8 @@ export default function WorkoutScreen() {
               const avgPace = parsed.distanceMiles > 0
                 ? (parsed.durationSeconds / 60) / parsed.distanceMiles
                 : undefined;
+              const weightLbs = useAppStore.getState().weightEntries.slice(-1)[0]?.weight ?? 155;
+              const calories = estimateCalories(workout!.workoutType, parsed.durationSeconds, weightLbs);
 
               await updateWorkout(workout!.id, {
                 isCompleted:           true,
@@ -193,6 +205,7 @@ export default function WorkoutScreen() {
                 actualDistanceMiles:   parsed.distanceMiles,
                 averagePaceMinPerMile: avgPace,
                 route:                 parsed.points,
+                estimatedCalories:     calories,
               });
 
               const updatedPlan = useAppStore.getState().plan;
@@ -238,10 +251,19 @@ export default function WorkoutScreen() {
           </View>
 
           <View style={styles.statsRow}>
-            {workout.distanceMiles != null &&
-              <StatChip label="Distance" value={`${workout.distanceMiles.toFixed(1)} mi`} />}
-            {workout.durationMinutes != null &&
-              <StatChip label="Duration" value={`${workout.durationMinutes} min`} />}
+            {workout.isCompleted && workout.actualDistanceMiles != null
+              ? <StatChip label="Distance" value={`${workout.actualDistanceMiles.toFixed(2)} mi`} />
+              : workout.distanceMiles != null
+              ? <StatChip label="Distance" value={`${workout.distanceMiles.toFixed(1)} mi`} />
+              : null}
+            {workout.isCompleted && workout.actualDurationSeconds != null
+              ? <StatChip label="Duration" value={formatDuration(workout.actualDurationSeconds)} />
+              : workout.durationMinutes != null
+              ? <StatChip label="Duration" value={`${workout.durationMinutes} min`} />
+              : null}
+            {workout.isCompleted && workout.estimatedCalories
+              ? <StatChip label="Calories" value={`~${workout.estimatedCalories}`} />
+              : null}
             <StatChip label="Date" value={formatDate(workout.date)} />
           </View>
         </View>
@@ -461,6 +483,7 @@ const WORKOUT_EMOJIS: Record<WorkoutType, string> = {
   [WorkoutType.Easy]: '🏃', [WorkoutType.Long]: '🛣️', [WorkoutType.Tempo]: '⏱️',
   [WorkoutType.Intervals]: '⚡️', [WorkoutType.Strides]: '💨',
   [WorkoutType.Rest]: '😴', [WorkoutType.Strength]: '🏋️', [WorkoutType.Mobility]: '🧘',
+  [WorkoutType.Walk]: '🚶',
 };
 
 // ── Styles ────────────────────────────────────────────────

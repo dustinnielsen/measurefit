@@ -179,6 +179,20 @@ export default function TodayTab() {
           <PaceZonesCard ability={profile.ability} goal={profile.goal} />
         )}
 
+        {/* Log a workout */}
+        {plan && (
+          <TouchableOpacity
+            style={styles.logWorkoutBtn}
+            onPress={() => router.push('/log-workout' as any)}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: 22 }}>➕</Text>
+            <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600', marginLeft: Spacing.sm }]}>
+              Log a Workout
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {!plan && (
           <Card style={{ alignItems: 'center', padding: Spacing.xxl }}>
             <Text style={{ fontSize: 48 }}>🏃</Text>
@@ -432,6 +446,8 @@ const styles = StyleSheet.create({
 
   nudgeBanner: { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.lg, borderLeftWidth: 3, borderLeftColor: Colors.accent },
   nudgeText:   { ...Typography.footnote, color: Colors.textSecondary },
+
+  logWorkoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.lg, marginTop: Spacing.md, borderWidth: 1.5, borderColor: Colors.accent + '40', borderStyle: 'dashed' },
 
   predictorCard: { backgroundColor: Colors.surface },
 
