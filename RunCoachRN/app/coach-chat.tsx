@@ -4,13 +4,13 @@ import {
   SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { router } from 'expo-router';
+import Constants from 'expo-constants';
 import { useAppStore, currentWeekNumber, completedMilesThisWeek, weeklyMileage } from '../src/store/useAppStore';
 import { Colors, Radius, Spacing, Typography } from '../src/theme';
-import { GOAL_LABELS, ABILITY_LABELS, PHASE_LABELS, WorkoutType } from '../src/types/enums';
+import { GOAL_LABELS, ABILITY_LABELS, WorkoutType } from '../src/types/enums';
 import { getPaceZones } from '../src/services/PaceService';
 
-// Replace with your Anthropic API key, or pull from an env / config file
-const ANTHROPIC_API_KEY = '';
+const ANTHROPIC_API_KEY: string = Constants.expoConfig?.extra?.anthropicApiKey ?? '';
 
 interface Message {
   id: string;
