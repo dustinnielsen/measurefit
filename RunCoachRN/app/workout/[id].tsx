@@ -76,9 +76,21 @@ export default function WorkoutScreen() {
     startSession(workout!.id);
 
     if (isRunWorkout(workout!.workoutType)) {
-      await LocationService.startTracking((update) => {
+      const result = await LocationService.startTracking((update) => {
         updateSessionGPS(update.point, update.distanceMiles, update.currentPaceMinPerMile ?? undefined);
       });
+      if (!result) {
+        Alert.alert(
+          'Location unavailable',
+          'Cinder needs location permission to track your route. Go to Settings → Privacy → Location Services → Cinder → While Using App.',
+        );
+      } else if (result === 'foreground') {
+        Alert.alert(
+          'Screen-on tracking only',
+          'For full background tracking (route records even when screen locks), go to Settings → Privacy → Location Services → Cinder → Always.',
+          [{ text: 'OK' }],
+        );
+      }
     }
   }
 

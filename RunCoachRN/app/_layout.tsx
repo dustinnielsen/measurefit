@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAppStore } from '../src/store/useAppStore';
+import { WorkoutTicker } from './(tabs)/_layout';
 // Side-effect import — registers the background location task before any screen renders
 import '../src/services/LocationService';
 
@@ -20,7 +22,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <View style={{ flex: 1 }}>
+        <WorkoutTicker />
+        <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(tabs)" />
@@ -37,6 +41,7 @@ export default function RootLayout() {
         <Stack.Screen name="weight-history"   options={{ presentation: 'modal' }} />
         <Stack.Screen name="log-workout"      options={{ presentation: 'modal' }} />
       </Stack>
+      </View>
     </GestureHandlerRootView>
   );
 }
