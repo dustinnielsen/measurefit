@@ -1395,15 +1395,53 @@ If has_schedule is true, also list the window mark/type letters or codes you can
 Return ONLY valid JSON. No markdown.`;
 
 // ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────────────────
-const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. One or more of these pages contains a VINYL WINDOW SCHEDULE or similar window/door schedule table — it may be in a corner of a page that is mostly drawings.
+const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages contain window type DRAWINGS and/or a window schedule TABLE.
 
-Find the schedule table and extract every window type row from it.
+YOUR TASK: For each window type (A, B, C, D, E, F, G, etc.) determine the dimensions of each INDIVIDUAL PANE that would receive its own shade — NOT the overall assembly size.
 
-For each row return:
-{ "tag": "A", "quantity": null, "width_inches": 96, "height_inches": 108, "room_name": "Schedule", "room_number": null, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "page ${pageRange}", "source_type": "schedule", "confidence": "high", "notes": "FIXED, WELDED VINYL" }
+━━━ CRITICAL DISTINCTION ━━━
+A window "assembly" often contains multiple individual panes separated by mullions or frames.
+Each separately-framed glass opening = one shade = one pane.
 
-Note: quantity is null here — it will be filled in from floor plan tag counts.
-Feet-inches conversion: 3'-0"=36, 4'-0"=48, 5'-0"=60, 6'-0"=72, 7'-0"=84, 8'-0"=96, 9'-0"=108, 9'-10"=118, 2'-6"=30, 8'-6"=102.
+Example: A 9'-10" wide assembly labeled E with three sections of 3'-0" + 3'-4" + 3'-0"
+= 3 individual panes, each approximately 36" wide. You would quote 3 shades, not one 118" shade.
+
+━━━ HOW TO FIND INDIVIDUAL PANE DIMS ━━━
+1. Look at the WINDOW TYPE DRAWINGS (the scaled diagrams of each type, labeled A, B, C…)
+2. Inside each drawing, find the dimension strings on INDIVIDUAL SECTIONS (the subdivisions between mullions)
+3. Those subdivision dimensions = individual pane width and height
+4. Count how many individually-framed panes are in one assembly (panes_per_assembly)
+
+If no type drawings exist, use the schedule table dimensions but set panes_per_assembly=1
+and note "assembly dims — verify pane count in field".
+
+━━━ WHAT TO IGNORE ━━━
+- The OVERALL assembly width/height from the schedule table (use it only as a fallback)
+- Transom strips that are fixed and very narrow (< 18" tall) — these rarely get shades; set a note
+- Door panels within an assembly (mark in notes, do not count as a shade pane)
+
+━━━ FEET-INCHES CONVERSION ━━━
+2'-6"=30, 2'-11"=35, 3'-0"=36, 3'-4"=40, 3'-6"=42, 4'-0"=48, 5'-0"=60,
+6'-0"=72, 7'-0"=84, 8'-0"=96, 8'-6"=102, 9'-0"=108, 9'-10"=118, 10'-0"=120
+
+For each window type return ONE object:
+{
+  "tag": "E",
+  "width_inches": 36,
+  "height_inches": 72,
+  "panes_per_assembly": 3,
+  "covering_type": "window",
+  "mount_type": null,
+  "motor_type": null,
+  "opacity": null,
+  "fabric_spec": null,
+  "product_spec": null,
+  "sheet_ref": "page ${pageRange}",
+  "source_type": "schedule",
+  "confidence": "high",
+  "notes": "3-pane assembly; 3'-0\"+3'-4\"+3'-0\"; fixed welded vinyl; balcony door"
+}
+
 Return ONLY valid JSON array. No markdown.`;
 
 // ── STAGE 2B: ELEVATION EXTRACTION ───────────────────────────────────────────
@@ -1467,16 +1505,22 @@ ${JSON.stringify(elevItems)}
 ${JSON.stringify(tagTotals)}
 
 RULES:
-${hasSchedule ? `1. SCHEDULE + TAG COUNTS: The schedule gives dimensions per tag (A=96"×108", C=72"×72" etc). The floor plan counts give how many of each tag exist. Multiply them: if schedule says tag C is 72"×72" and floor plans show 38 instances of tag C → one entry: 72"×72" qty=38.
-2. One output entry per unique window tag/size combination.
-3. If a tag appears in floor plan counts but not in the schedule, keep it with dims null and confidence="low".
-4. If a tag appears in the schedule but not in floor plan counts, keep it with quantity=1 and confidence="low".
+${hasSchedule ? `1. SCHEDULE + TAG COUNTS = FINAL QUANTITY
+   The schedule gives: individual pane dims (width_inches, height_inches) and panes_per_assembly per tag.
+   The floor plan tag counts give: how many assemblies of each tag exist in the building.
+   Formula: total_shades = floor_plan_tag_count × panes_per_assembly
+   Example: tag C has panes_per_assembly=1, floor plans show 38 × C → 38 shades of 72"×72"
+   Example: tag E has panes_per_assembly=3, floor plans show 6 × E → 18 shades of 36"×72"
+2. Use width_inches and height_inches from the schedule (individual pane dims, not assembly dims).
+3. One output entry per unique tag. If two tags have the same individual pane dims, keep them separate (they may have different assembly counts).
+4. If a tag appears in floor plan counts but not in the schedule: keep with dims null and confidence="low".
+5. If a tag appears in the schedule but not in floor plan counts: keep with quantity=panes_per_assembly and confidence="low".
 ` : `1. No schedule. Use elevation dimensions as authoritative. Floor plan counts give quantities.
 2. Group elevation windows by similar size (±3 inches). Sum quantities per size group.
 3. Floor plan total (${fpTotal}) is your target. Flag discrepancies in notes.
 `}
-OUTPUT — one object per unique window tag or size:
-{ "room_name": "Multiple rooms", "room_number": null, "tag": "C", "quantity": 38, "width_inches": 72, "height_inches": 72, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "Schedule p.45", "confidence": "high", "notes": "Single hung vinyl; Levels 2-3" }
+OUTPUT — one object per unique window tag:
+{ "room_name": "Multiple rooms", "room_number": null, "tag": "C", "quantity": 38, "width_inches": 72, "height_inches": 72, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "Schedule p.45", "confidence": "high", "notes": "Single hung vinyl; 1 pane per assembly × 38 assemblies" }
 
 Return ONLY valid JSON array. No markdown.`;
 };
