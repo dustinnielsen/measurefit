@@ -1364,69 +1364,101 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-const TAKEOFF_PROMPT = (pageList, totalPages) => `You are helping a window covering contractor (blinds, shades, shutters) take off every window from a set of architectural plans so they can quote window coverings for the whole building.
+const TAKEOFF_PROMPT = (pageList, totalPages) => `You are helping a window covering contractor extract every window opening from architectural plans so they can quote window coverings.
 
-These are pages ${pageList} from a ${totalPages}-page plan set.
+These are pages ${pageList} from a ${totalPages}-page plan set. There may or may not be a window schedule.
 
-YOUR TASK: Extract every window opening with accurate dimensions and counts.
+YOUR TASK: Find every window opening and record its dimensions and count as accurately as possible.
 
-CRITICAL — AVOID DOUBLE COUNTING:
-- If you see a WINDOW/DOOR SCHEDULE (a table listing window types like W1, W2 with sizes and quantities): extract one entry per window TYPE from the schedule. The schedule quantity IS the count for that type. Set source_type="schedule".
-- If you see individual window callouts in a FLOOR PLAN or ELEVATION that reference a schedule tag (W1, W2, etc.): DO NOT create new entries for these — the schedule already accounts for them. Only note the tag and count instances if you suspect the schedule quantity is wrong.
-- If you see windows in a floor plan with NO schedule tag and no schedule visible: create one entry per distinct opening (or group identical ones in the same room). Set source_type="floor_plan".
-- If you see windows in an ELEVATION with explicit dimension lines: these are usually the most accurate — record them with source_type="elevation".
+━━━ IF A WINDOW SCHEDULE EXISTS (a table listing window types W1/W2/A/B with sizes and quantities) ━━━
+- Extract one entry per window TYPE from the schedule table
+- Use the quantity column directly — that IS the count
+- Set source_type="schedule"
+- Do NOT also count individual floor plan instances — the schedule already has the total
 
-WHERE TO LOOK:
-- Window/door schedules: tables listing window types with rough opening sizes — HIGHEST PRIORITY
-- Exterior elevations: dimension lines showing exact width and height — HIGH PRIORITY
-- Interior elevations: window openings with heights above finished floor
-- Floor plans: windows as gaps in walls, often with tag only (W1 etc.)
-- Section drawings: sill height and head height give you the opening height
+━━━ IF NO WINDOW SCHEDULE EXISTS (most common) ━━━
+You must read dimensions directly from floor plans and elevations. Follow these rules carefully:
 
-HOW TO READ DIMENSIONS:
-- Dimensions shown as feet-inches: 3'-0" = 36 inches, 2'-6" = 30 inches, 3'6" = 42 inches
-- Convert ALL dimensions to decimal inches
-- Finish opening preferred; rough opening acceptable if finish not shown
-- If a tag is shown (W1) but dims are not visible on this page, set dims to null — do NOT guess
+FLOOR PLANS — width only:
+- Windows appear as a gap in the wall with a 3-line symbol (two lines close together spanning the wall)
+- The dimension string DIRECTLY labeling the window opening gap is the WIDTH
+- Do NOT use overall room dimensions, bay spacing, or wall-to-wall measurements as window widths
+- If no dimension string is directly on the window symbol, set width_inches=null
 
-For EACH entry return a JSON object with:
-- room_name: room or space name (use "Schedule" if from a window schedule table)
+EXTERIOR ELEVATIONS — width AND height:
+- Elevations show the building face with windows drawn as rectangles with dimension lines
+- Horizontal dimension lines give WIDTH, vertical dimension lines give HEIGHT
+- These are the most reliable source — prefer elevation dims over floor plan dims for the same window
+- Set source_type="elevation"
+
+INTERIOR ELEVATIONS — height:
+- Show window opening heights above finished floor
+- Use vertical dimension lines to get height
+
+HEIGHTS in floor plans:
+- Floor plans rarely show window height — do NOT infer height from floor plan unless explicitly labeled
+- Set height_inches=null if you can only find width on a floor plan page
+
+WHAT NOT TO INCLUDE:
+- Doors (unless they are full-height glass windows/storefronts)
+- Skylights (call them out in notes but they are rarely quoted for window coverings)
+- Room overall dimensions — these are NOT window dimensions
+- Dimensions you cannot directly trace to a window opening symbol
+
+COUNT CAREFULLY:
+- Count each visible window opening symbol on this page
+- If 6 identical windows appear in a row in the same room, return quantity=6 (not 6 separate entries)
+- Do NOT count the same window twice because it appears in both a plan and an elevation on this page
+
+For EACH entry return:
+- room_name: room/space name from the plan label
 - room_number: room number if labeled, otherwise null
-- tag: window type tag (e.g. "W1", "A", "TYPE 3") or null
-- quantity: number of this window type (from schedule quantity column, or count of identical instances in same room)
-- width_inches: opening width in decimal inches. null only if truly unreadable.
-- height_inches: opening height in decimal inches. null only if truly unreadable.
+- tag: window type tag if shown (W1, A, etc.), otherwise null
+- quantity: count of identical windows at this specific location on this page
+- width_inches: opening width in decimal inches (3'-0" = 36, 2'-6" = 30). null if not directly readable.
+- height_inches: opening height in decimal inches. null if not on this page type.
 - covering_type: shade/blind type if called out, otherwise "window"
 - mount_type: "inside", "outside", or "recessed" if specified, otherwise null
 - motor_type: "motorized" or "manual" if specified, otherwise null
-- opacity: "light filtering", "room darkening", "blackout", or "solar screen" if specified, otherwise null
-- fabric_spec: fabric or material callout, otherwise null
+- opacity: "light filtering", "room darkening", "blackout", "solar screen" if specified, otherwise null
+- fabric_spec: fabric/material callout, otherwise null
 - product_spec: brand/product callout, otherwise null
-- sheet_ref: sheet number where you found this
-- source_type: "schedule", "elevation", or "floor_plan"
-- confidence: "high" if dimensions clearly readable; "medium" if inferred; "low" if not readable
-- notes: floor level, sill height, any special conditions
+- sheet_ref: sheet number or page identifier
+- source_type: "schedule", "elevation", "floor_plan", or "interior_elevation"
+- confidence: "high" if you can directly read the dimension; "medium" if inferred; "low" if guessed
+- notes: floor level, sill height, special conditions (corner window, storefront, etc.)
 
-Return ONLY a valid JSON array. No markdown, no explanation. If truly none found return [].`;
+Return ONLY a valid JSON array. No markdown. If truly none found return [].`;
 
-const RECONCILE_PROMPT = (items) => `You are a window covering takeoff specialist reconciling a raw window list extracted from architectural plans across multiple passes. The same window may appear multiple times — from a schedule, a floor plan, and an elevation.
+const RECONCILE_PROMPT = (items) => `You are a window covering takeoff specialist. Below is a raw list extracted from architectural plans across multiple page batches. The same window likely appears multiple times — seen on a floor plan page AND again on an elevation page, or seen in two adjacent batches.
 
-RAW ITEMS (${items.length} entries, likely contains duplicates):
+RAW ITEMS (${items.length} entries):
 ${JSON.stringify(items)}
 
-YOUR JOB: Return a single clean, accurate, deduplicated list following these rules:
+YOUR JOB: Produce a clean, accurate final list where every window is counted exactly once with the best available dimensions.
 
-DEDUPLICATION RULES:
-1. Schedule entries (source_type="schedule") are AUTHORITATIVE for dimensions and quantity — keep them and remove matching floor_plan/elevation instances that have the same tag
-2. If no schedule entry exists for a tag, use elevation dimensions (source_type="elevation") over floor plan dimensions
-3. Windows with the same tag AND similar dimensions from different source types → merge into ONE entry using the most reliable source's dimensions and the schedule quantity (or sum of floor_plan instances if no schedule)
-4. Windows in DIFFERENT rooms with the same dimensions → keep as SEPARATE entries (each room has its own windows)
-5. Identical entries from the same room (exact duplicate passes) → collapse into one, do not double the quantity
-6. If schedule says W1×8 but floor plan instances suggest a different count, keep schedule quantity but add a note about the discrepancy
+STEP 1 — DEDUPLICATE ACROSS PASSES:
+- If the same room + same dimensions appears in multiple entries, it was seen in overlapping batches — collapse to ONE entry, keep the quantity from one pass (do NOT add them together)
+- If source_type="elevation" and source_type="floor_plan" entries exist for the same windows, keep the elevation entry (better dims) and discard the floor_plan duplicate
 
-OUTPUT: Return a clean JSON array. Each object must have all original fields (room_name, room_number, tag, quantity, width_inches, height_inches, covering_type, mount_type, motor_type, opacity, fabric_spec, product_spec, sheet_ref, confidence, notes). Remove source_type from final output.
+STEP 2 — RESOLVE DIMENSIONS:
+- If an entry has width but no height, look for another entry from the same room or same tag that has the height — merge them
+- Prefer elevation dimensions over floor plan dimensions for the same window
+- If dims are still null after merging, mark confidence="low" and keep the entry — do not discard it
 
-Return ONLY a valid JSON array. No markdown, no explanation.`;
+STEP 3 — GROUP BY SIZE (no schedule case):
+- Windows with the same dimensions (within ±3 inches on each axis) that appear across DIFFERENT rooms are likely the same window type used throughout the building
+- Consolidate these into ONE entry with quantity = total count across all rooms
+- List the rooms in the notes field (e.g. "Rooms: 101, 102, 103, Lobby")
+- EXCEPTION: if a room clearly has a distinctly different use (e.g. a conference room vs corridor), keep separate if the context suggests different covering specs
+
+STEP 4 — VALIDATE:
+- Flag any dimension that seems implausible for a window covering (e.g. width > 240 inches or height > 180 inches) — set confidence="low" and note "verify dimensions"
+- Remove any entry where both width and height are null AND quantity=1 — these are noise
+
+OUTPUT: Return a clean JSON array. Each object must have: room_name, room_number, tag, quantity, width_inches, height_inches, covering_type, mount_type, motor_type, opacity, fabric_spec, product_spec, sheet_ref, confidence, notes. Remove source_type.
+
+Return ONLY a valid JSON array. No markdown. No explanation.`;
 
 async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const job = takeoffJobs.get(jobId);
@@ -1468,7 +1500,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const renderPageToJpeg = async (pageNum) => {
     return bPage.evaluate(async (pNum) => {
       const pdfPage = await window.__pdf.getPage(pNum);
-      const viewport = pdfPage.getViewport({ scale: 2.0 });
+      const viewport = pdfPage.getViewport({ scale: 2.5 });
       const canvas = document.getElementById('c');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
