@@ -1500,7 +1500,11 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const renderPageToJpeg = async (pageNum) => {
     return bPage.evaluate(async (pNum) => {
       const pdfPage = await window.__pdf.getPage(pNum);
-      const viewport = pdfPage.getViewport({ scale: 2.5 });
+      // Cap longest dimension at 3000px to stay under Claude's 5MB image limit
+      const raw = pdfPage.getViewport({ scale: 1 });
+      const MAX_PX = 3000;
+      const scale = Math.min(2.5, MAX_PX / Math.max(raw.width, raw.height));
+      const viewport = pdfPage.getViewport({ scale });
       const canvas = document.getElementById('c');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
@@ -1508,7 +1512,15 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-      return canvas.toDataURL('image/jpeg', 0.90).replace('data:image/jpeg;base64,', '');
+      // Reduce quality if needed to stay under 4.8MB
+      const MAX_B64 = 4.8 * 1024 * 1024;
+      let quality = 0.90;
+      let dataUrl = canvas.toDataURL('image/jpeg', quality);
+      while (dataUrl.length > MAX_B64 && quality > 0.50) {
+        quality -= 0.10;
+        dataUrl = canvas.toDataURL('image/jpeg', quality);
+      }
+      return dataUrl.replace('data:image/jpeg;base64,', '');
     }, pageNum);
   };
 
