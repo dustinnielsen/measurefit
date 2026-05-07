@@ -1364,101 +1364,125 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-const TAKEOFF_PROMPT = (pageList, totalPages) => `You are helping a window covering contractor extract every window opening from architectural plans so they can quote window coverings.
+// ── STAGE 1: PAGE CLASSIFICATION ─────────────────────────────────────────────
+const CLASSIFY_PROMPT = (pageNums) => `Classify each of the ${pageNums.length} page image(s) shown (in order, pages ${pageNums.join(', ')}).
 
-These are pages ${pageList} from a ${totalPages}-page plan set. There may or may not be a window schedule.
+Assign each page one type:
+- "floor_plan": top-down overhead view of building layout (rooms, walls, doors, windows)
+- "elevation": exterior or interior facade view showing the face of a wall with windows as rectangles
+- "section": cross-section cut showing building layers/structure
+- "schedule": a table or list (window schedule, door schedule, finish schedule)
+- "rcp": reflected ceiling plan (looks like floor plan but shows ceiling elements)
+- "detail": large-scale construction detail of a specific element
+- "mep": mechanical, electrical, plumbing, or structural plan
+- "other": cover sheet, notes, specs, site plan, landscape, or anything else
 
-YOUR TASK: Find every window opening and record its dimensions and count as accurately as possible.
+Also set has_windows: true if this page shows window openings that likely have dimension or count information useful for a window covering quote.
 
-━━━ IF A WINDOW SCHEDULE EXISTS (a table listing window types W1/W2/A/B with sizes and quantities) ━━━
-- Extract one entry per window TYPE from the schedule table
-- Use the quantity column directly — that IS the count
-- Set source_type="schedule"
-- Do NOT also count individual floor plan instances — the schedule already has the total
+Return a JSON array, one object per page in order:
+[{ "page": ${pageNums[0]}, "type": "floor_plan", "has_windows": true, "notes": "" }, ...]
+Return ONLY valid JSON. No markdown.`;
 
-━━━ IF NO WINDOW SCHEDULE EXISTS (most common) ━━━
-You must read dimensions directly from floor plans and elevations. Follow these rules carefully:
+// ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────────────────
+const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set containing a window or door schedule.
 
-FLOOR PLANS — width only:
-- Windows appear as a gap in the wall with a 3-line symbol (two lines close together spanning the wall)
-- The dimension string DIRECTLY labeling the window opening gap is the WIDTH
-- Do NOT use overall room dimensions, bay spacing, or wall-to-wall measurements as window widths
-- If no dimension string is directly on the window symbol, set width_inches=null
+Extract every window type from the schedule table. Each row in the table is one window type.
 
-EXTERIOR ELEVATIONS — width AND height:
-- Elevations show the building face with windows drawn as rectangles with dimension lines
-- Horizontal dimension lines give WIDTH, vertical dimension lines give HEIGHT
-- These are the most reliable source — prefer elevation dims over floor plan dims for the same window
-- Set source_type="elevation"
+For each row return:
+{ "tag": "W1", "quantity": 8, "width_inches": 36, "height_inches": 84, "room_name": "Schedule", "room_number": null, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "page ${pageRange}", "source_type": "schedule", "confidence": "high", "notes": "" }
 
-INTERIOR ELEVATIONS — height:
-- Show window opening heights above finished floor
-- Use vertical dimension lines to get height
+Dimensions in schedule are often shown as W×H in feet-inches. Convert to decimal inches (3'-0"=36, 7'-0"=84, 8'-0"=96).
+Return ONLY valid JSON array. No markdown.`;
 
-HEIGHTS in floor plans:
-- Floor plans rarely show window height — do NOT infer height from floor plan unless explicitly labeled
-- Set height_inches=null if you can only find width on a floor plan page
+// ── STAGE 2B: ELEVATION EXTRACTION ───────────────────────────────────────────
+const ELEVATION_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages are exterior or interior ELEVATION drawings.
 
-WHAT NOT TO INCLUDE:
-- Doors (unless they are full-height glass windows/storefronts)
-- Skylights (call them out in notes but they are rarely quoted for window coverings)
-- Room overall dimensions — these are NOT window dimensions
-- Dimensions you cannot directly trace to a window opening symbol
+Elevations show the face of a building wall. Windows appear as rectangles. Dimension lines (thin lines with tick marks or arrows at both ends) label measurements.
 
-COUNT CAREFULLY:
-- Count each visible window opening symbol on this page
-- If 6 identical windows appear in a row in the same room, return quantity=6 (not 6 separate entries)
-- Do NOT count the same window twice because it appears in both a plan and an elevation on this page
+YOUR TASK: Extract every window opening with its dimensions from the dimension lines.
 
-For EACH entry return:
-- room_name: room/space name from the plan label
-- room_number: room number if labeled, otherwise null
-- tag: window type tag if shown (W1, A, etc.), otherwise null
-- quantity: count of identical windows at this specific location on this page
-- width_inches: opening width in decimal inches (3'-0" = 36, 2'-6" = 30). null if not directly readable.
-- height_inches: opening height in decimal inches. null if not on this page type.
-- covering_type: shade/blind type if called out, otherwise "window"
-- mount_type: "inside", "outside", or "recessed" if specified, otherwise null
-- motor_type: "motorized" or "manual" if specified, otherwise null
-- opacity: "light filtering", "room darkening", "blackout", "solar screen" if specified, otherwise null
-- fabric_spec: fabric/material callout, otherwise null
-- product_spec: brand/product callout, otherwise null
-- sheet_ref: sheet number or page identifier
-- source_type: "schedule", "elevation", "floor_plan", or "interior_elevation"
-- confidence: "high" if you can directly read the dimension; "medium" if inferred; "low" if guessed
-- notes: floor level, sill height, special conditions (corner window, storefront, etc.)
+READING DIMENSION LINES:
+- Horizontal dimension line touching/bracketing a window → that window's WIDTH
+- Vertical dimension line touching/bracketing a window → that window's HEIGHT
+- Feet-inches conversion: 3'-0"=36in, 2'-6"=30in, 3'-6"=42in, 4'-0"=48in, 5'-0"=60in, 6'-0"=72in, 7'-0"=84in, 7'-6"=90in, 8'-0"=96in
 
-Return ONLY a valid JSON array. No markdown. If truly none found return [].`;
+CRITICAL — DO NOT READ:
+- Overall wall width (the long dimension spanning the whole facade) — that is NOT a window width
+- Floor-to-floor height — that is NOT a window height
+- Column/bay spacing — that is NOT a window width
+- Only use a dimension if it is clearly attached by a line directly to the window rectangle
 
-const RECONCILE_PROMPT = (items) => `You are a window covering takeoff specialist. Below is a raw list extracted from architectural plans across multiple page batches. The same window likely appears multiple times — seen on a floor plan page AND again on an elevation page, or seen in two adjacent batches.
+COUNT: If a row of identical windows repeats, count them and return quantity=N in ONE entry.
 
-RAW ITEMS (${items.length} entries):
-${JSON.stringify(items)}
+For each window or group:
+{ "width_inches": 36, "height_inches": 84, "quantity": 6, "elevation_face": "north", "floor_level": "Level 2", "sheet_ref": "page X", "source_type": "elevation", "confidence": "high", "notes": "" }
 
-YOUR JOB: Produce a clean, accurate final list where every window is counted exactly once with the best available dimensions.
+Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 
-STEP 1 — DEDUPLICATE ACROSS PASSES:
-- If the same room + same dimensions appears in multiple entries, it was seen in overlapping batches — collapse to ONE entry, keep the quantity from one pass (do NOT add them together)
-- If source_type="elevation" and source_type="floor_plan" entries exist for the same windows, keep the elevation entry (better dims) and discard the floor_plan duplicate
+// ── STAGE 2C: FLOOR PLAN COUNTING ────────────────────────────────────────────
+const FLOOR_PLAN_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages are FLOOR PLANS.
 
-STEP 2 — RESOLVE DIMENSIONS:
-- If an entry has width but no height, look for another entry from the same room or same tag that has the height — merge them
-- Prefer elevation dimensions over floor plan dimensions for the same window
-- If dims are still null after merging, mark confidence="low" and keep the entry — do not discard it
+YOUR ONLY JOB: COUNT window openings per room. Do NOT attempt to read dimensions.
 
-STEP 3 — GROUP BY SIZE (no schedule case):
-- Windows with the same dimensions (within ±3 inches on each axis) that appear across DIFFERENT rooms are likely the same window type used throughout the building
-- Consolidate these into ONE entry with quantity = total count across all rooms
-- List the rooms in the notes field (e.g. "Rooms: 101, 102, 103, Lobby")
-- EXCEPTION: if a room clearly has a distinctly different use (e.g. a conference room vs corridor), keep separate if the context suggests different covering specs
+Window openings in floor plans appear as a gap in an exterior wall with a 3-line symbol (two thin parallel lines spanning the wall thickness, representing the window frame). Do NOT count doors (shown as a gap with an arc swing line).
 
-STEP 4 — VALIDATE:
-- Flag any dimension that seems implausible for a window covering (e.g. width > 240 inches or height > 180 inches) — set confidence="low" and note "verify dimensions"
-- Remove any entry where both width and height are null AND quantity=1 — these are noise
+For each room or distinct area on these pages:
+{ "room_name": "Office 201", "room_number": "201", "floor_level": "Level 2", "window_count": 3, "sheet_ref": "page X", "notes": "corner windows" }
 
-OUTPUT: Return a clean JSON array. Each object must have: room_name, room_number, tag, quantity, width_inches, height_inches, covering_type, mount_type, motor_type, opacity, fabric_spec, product_spec, sheet_ref, confidence, notes. Remove source_type.
+Count carefully. If a room appears on multiple pages in this batch, report it once with the total count visible.
+Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 
-Return ONLY a valid JSON array. No markdown. No explanation.`;
+// ── STAGE 3: RECONCILIATION ───────────────────────────────────────────────────
+const RECONCILE_PROMPT = (scheduleItems, elevItems, fpCounts) => {
+  const fpTotal = fpCounts.reduce((s, r) => s + (r.window_count || 0), 0);
+  const elevTotal = elevItems.reduce((s, e) => s + (e.quantity || 1), 0);
+  const hasSchedule = scheduleItems.length > 0;
+  const hasElevations = elevItems.length > 0;
+
+  return `You are finalizing a window covering takeoff for a contractor. Combine the data below into a clean, accurate final list.
+
+${hasSchedule ? `WINDOW SCHEDULE (most authoritative — use these quantities and dimensions):
+${JSON.stringify(scheduleItems)}
+
+` : ''}${hasElevations ? `ELEVATION EXTRACTIONS (window sizes read from exterior/interior elevation drawings, ${elevTotal} total units):
+${JSON.stringify(elevItems)}
+
+` : ''}FLOOR PLAN COUNTS (room-by-room window counts with no dimensions, ${fpTotal} total units):
+${JSON.stringify(fpCounts)}
+
+RULES:
+${hasSchedule ? `1. Schedule is authoritative. Use schedule dimensions and quantities. Floor plan counts are for verification only.
+` : `1. No schedule exists. Use elevation dimensions as authoritative. Floor plan counts tell you the total.
+`}2. Group elevation windows by similar size (±3 inches on each axis = same type). Sum quantities across all elevations for each group.
+3. The floor plan total (${fpTotal} windows) is your target count. If elevation totals differ significantly, note the discrepancy and trust floor plans for quantity.
+4. Produce ONE entry per unique window size. Set room_name to "Multiple rooms" and list rooms in notes.
+5. If floor plans show more windows than elevations account for, add an entry with dims null, confidence="low", noting "additional windows — dimensions not found in elevations".
+6. Remove entries where both dims are null unless floor plan counts confirm real windows exist there.
+
+OUTPUT — one object per unique window size:
+{ "room_name": "Multiple rooms", "room_number": null, "tag": null, "quantity": 50, "width_inches": 36, "height_inches": 84, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "see notes", "confidence": "high", "notes": "Levels 2-3; rooms 201-218" }
+
+Return ONLY valid JSON array. No markdown.`;
+};
+
+// ── FALLBACK: used when classification finds no elevations ────────────────────
+const FALLBACK_PROMPT = (pageRange, totalPages) => `You are helping a window covering contractor extract every window opening from architectural plans. These are pages ${pageRange} from a ${totalPages}-page plan set with no window schedule.
+
+Extract every window opening. For dimensions: only read strings directly attached by dimension lines to the window opening symbol — not room dimensions, column spacing, or wall lengths.
+
+Feet-inches: 3'-0"=36in, 2'-6"=30in, 7'-0"=84in, 8'-0"=96in, 7'-6"=90in.
+Set width_inches/height_inches to null if you cannot trace a dimension line directly to the window.
+
+Group identical windows in the same room into one entry with quantity=N.
+
+Return: [{ "room_name": "", "room_number": null, "tag": null, "quantity": 1, "width_inches": 36, "height_inches": 84, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "", "source_type": "floor_plan", "confidence": "high", "notes": "" }]
+Return ONLY valid JSON array. No markdown.`;
+
+const FALLBACK_RECONCILE_PROMPT = (items) => `Deduplicate this raw window list from multiple scan passes. Same window seen twice = collapse to one entry (do not add quantities). Group by matching dimensions (±3in). Sum quantities for same size across different rooms. Remove entries where both dims are null and quantity=1.
+
+RAW: ${JSON.stringify(items)}
+
+Return clean JSON array with fields: room_name, room_number, tag, quantity, width_inches, height_inches, covering_type, mount_type, motor_type, opacity, fabric_spec, product_spec, sheet_ref, confidence, notes. No markdown.`;
 
 async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const job = takeoffJobs.get(jobId);
@@ -1468,8 +1492,6 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const Anthropic = require('@anthropic-ai/sdk');
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  // Render PDF pages to JPEG base64 strings via puppeteer + PDF.js.
-  // Launches one browser for the whole job and loads the PDF once.
   const pdfjsPath  = require.resolve('pdfjs-dist/legacy/build/pdf.js');
   const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.js');
   const workerSrc  = fs.readFileSync(workerPath, 'utf8');
@@ -1482,13 +1504,11 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   await bPage.setContent('<!DOCTYPE html><html><body style="margin:0;background:white"><canvas id="c"></canvas></body></html>');
   await bPage.addScriptTag({ path: pdfjsPath });
 
-  // Create a blob URL for the worker so PDF.js can use it without fetch restrictions
   await bPage.evaluate((ws) => {
     const blob = new Blob([ws], { type: 'application/javascript' });
     pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
   }, workerSrc);
 
-  // Load the PDF once into the browser context
   const pdfBase64 = Buffer.from(fs.readFileSync(pdfPath)).toString('base64');
   await bPage.evaluate(async (b64) => {
     const binary = atob(b64);
@@ -1500,7 +1520,6 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const renderPageToJpeg = async (pageNum) => {
     return bPage.evaluate(async (pNum) => {
       const pdfPage = await window.__pdf.getPage(pNum);
-      // Cap longest dimension at 3000px to stay under Claude's 5MB image limit
       const raw = pdfPage.getViewport({ scale: 1 });
       const MAX_PX = 3000;
       const scale = Math.min(2.5, MAX_PX / Math.max(raw.width, raw.height));
@@ -1512,7 +1531,6 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-      // Reduce quality if needed to stay under 4.8MB
       const MAX_B64 = 4.8 * 1024 * 1024;
       let quality = 0.90;
       let dataUrl = canvas.toDataURL('image/jpeg', quality);
@@ -1524,92 +1542,174 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
     }, pageNum);
   };
 
-  try {
-    const PAGES_PER_BATCH = 3;
-    const JOB_TIMEOUT_MS = 9 * 60 * 1000;
-    const jobStart = Date.now();
-    const allItems = [];
-    let passNum = 0;
+  // Render a list of page numbers into Claude image blocks
+  const renderBatch = async (pages) => {
+    const blocks = [];
+    for (const p of pages) {
+      try {
+        const data = await renderPageToJpeg(p);
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
+      } catch (e) {
+        console.warn(`Takeoff [${jobId}]: render failed page ${p}: ${e.message}`);
+      }
+    }
+    return blocks;
+  };
 
-    // All pages 1-48 (floor plans/elevations/schedules), then every 2nd page after
+  // Call Claude and parse JSON response, returns [] on failure
+  const callClaude = async (imageBlocks, promptText, maxTokens = 4000) => {
+    try {
+      const msg = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: promptText }] }],
+      });
+      const raw = msg.content[0]?.text ?? '[]';
+      return JSON.parse(raw.replace(/```json\n?|```/g, '').trim());
+    } catch (e) {
+      console.warn(`Takeoff [${jobId}]: Claude call failed: ${e.message}`);
+      return [];
+    }
+  };
+
+  try {
+    const JOB_TIMEOUT_MS = 11 * 60 * 1000;
+    const jobStart = Date.now();
+
     const pageList = [];
     for (let p = 1; p <= Math.min(totalPages, 48); p++) pageList.push(p);
     for (let p = 49; p <= totalPages; p += 2) pageList.push(p);
 
-    const totalPasses = Math.ceil(pageList.length / PAGES_PER_BATCH);
+    // ── STAGE 1: CLASSIFY ALL PAGES ──────────────────────────────────
+    job.progress = 'Classifying plan pages…';
+    console.log(`Takeoff [${jobId}]: classifying ${pageList.length} pages`);
+    const pageTypes = {};
+    const CLASS_BATCH = 5;
 
-    for (let batchIdx = 0; batchIdx < pageList.length; batchIdx += PAGES_PER_BATCH) {
-      if (Date.now() - jobStart > JOB_TIMEOUT_MS) {
-        console.log(`Takeoff [${jobId}]: timeout, returning ${allItems.length} items from ${passNum} passes`);
-        break;
+    for (let i = 0; i < pageList.length; i += CLASS_BATCH) {
+      if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+      const batch = pageList.slice(i, i + CLASS_BATCH);
+      const blocks = await renderBatch(batch);
+      if (!blocks.length) continue;
+      const results = await callClaude(blocks, CLASSIFY_PROMPT(batch), 1200);
+      for (const c of (Array.isArray(results) ? results : [])) {
+        if (c.page) pageTypes[c.page] = { type: c.type, hasWindows: c.has_windows };
       }
-
-      passNum++;
-      const batch = pageList.slice(batchIdx, batchIdx + PAGES_PER_BATCH);
-      const start = batch[0];
-      const end = batch[batch.length - 1];
-
-      job.progress = `Scanning pages ${start}–${end} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
-      console.log(`Takeoff [${jobId}]: ${job.progress}`);
-
-      const imageBlocks = [];
-      for (const pageNum of batch) {
-        try {
-          const data = await renderPageToJpeg(pageNum);
-          imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
-        } catch (e) {
-          console.warn(`Takeoff [${jobId}]: failed to render page ${pageNum}: ${e.message}`);
-        }
+      // Any pages not returned by Claude default to unknown
+      for (const p of batch) {
+        if (!pageTypes[p]) pageTypes[p] = { type: 'unknown', hasWindows: true };
       }
+    }
 
-      if (imageBlocks.length === 0) continue;
+    const elevPages     = pageList.filter(p => ['elevation','section'].includes(pageTypes[p]?.type) && pageTypes[p]?.hasWindows);
+    const fpPages       = pageList.filter(p => pageTypes[p]?.type === 'floor_plan' && pageTypes[p]?.hasWindows);
+    const schedPages    = pageList.filter(p => pageTypes[p]?.type === 'schedule');
+    const unknownPages  = pageList.filter(p => !pageTypes[p] || pageTypes[p]?.type === 'unknown');
 
-      const message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8000,
-        messages: [{
-          role: 'user',
-          content: [
-            ...imageBlocks,
-            { type: 'text', text: TAKEOFF_PROMPT(`${start}–${end}`, totalPages) },
-          ],
-        }],
-      });
+    console.log(`Takeoff [${jobId}]: classified — ${elevPages.length} elevations, ${fpPages.length} floor plans, ${schedPages.length} schedules, ${unknownPages.length} unknown`);
 
-      const raw = message.content[0]?.text ?? '[]';
-      let chunkItems = [];
-      try { chunkItems = JSON.parse(raw.replace(/```json|```/g, '').trim()); } catch { chunkItems = []; }
-      console.log(`Takeoff [${jobId}]: pass ${passNum} → ${chunkItems.length} items`);
-      allItems.push(...chunkItems);
+    // ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────
+    const scheduleItems = [];
+    for (let i = 0; i < schedPages.length; i += 3) {
+      if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+      const batch = schedPages.slice(i, i + 3);
+      job.progress = 'Reading window schedule…';
+      const blocks = await renderBatch(batch);
+      if (!blocks.length) continue;
+      const items = await callClaude(blocks, SCHEDULE_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages));
+      scheduleItems.push(...(Array.isArray(items) ? items : []));
+    }
+    console.log(`Takeoff [${jobId}]: ${scheduleItems.length} items from schedule`);
+
+    // ── STAGE 2B: ELEVATION EXTRACTION ───────────────────────────────
+    const elevationItems = [];
+    for (let i = 0; i < elevPages.length; i += 2) {
+      if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+      const batch = elevPages.slice(i, i + 2);
+      const pass = Math.floor(i / 2) + 1;
+      const total = Math.ceil(elevPages.length / 2);
+      job.progress = `Reading dimensions from elevations (${pass}/${total})…`;
+      const blocks = await renderBatch(batch);
+      if (!blocks.length) continue;
+      const items = await callClaude(blocks, ELEVATION_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages));
+      elevationItems.push(...(Array.isArray(items) ? items : []));
+    }
+    console.log(`Takeoff [${jobId}]: ${elevationItems.length} items from elevations`);
+
+    // ── STAGE 2C: FLOOR PLAN COUNTING ────────────────────────────────
+    const floorPlanCounts = [];
+    for (let i = 0; i < fpPages.length; i += 3) {
+      if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+      const batch = fpPages.slice(i, i + 3);
+      const pass = Math.floor(i / 3) + 1;
+      const total = Math.ceil(fpPages.length / 3);
+      job.progress = `Counting windows in floor plans (${pass}/${total})…`;
+      const blocks = await renderBatch(batch);
+      if (!blocks.length) continue;
+      const counts = await callClaude(blocks, FLOOR_PLAN_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages));
+      floorPlanCounts.push(...(Array.isArray(counts) ? counts : []));
+    }
+    console.log(`Takeoff [${jobId}]: floor plan counts — ${floorPlanCounts.reduce((s, r) => s + (r.window_count || 0), 0)} total windows across ${floorPlanCounts.length} rooms`);
+
+    // ── FALLBACK: no useful staged data found ────────────────────────
+    // If classification found no elevations and no schedule, run old approach on all pages
+    const useFallback = scheduleItems.length === 0 && elevationItems.length === 0;
+    const fallbackItems = [];
+
+    if (useFallback) {
+      console.log(`Takeoff [${jobId}]: no elevations or schedule found — running fallback extraction`);
+      const fallbackPages = [...new Set([...fpPages, ...unknownPages])];
+      for (let i = 0; i < fallbackPages.length; i += 3) {
+        if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+        const batch = fallbackPages.slice(i, i + 3);
+        const pass = Math.floor(i / 3) + 1;
+        const total = Math.ceil(fallbackPages.length / 3);
+        job.progress = `Extracting windows (${pass}/${total})…`;
+        const blocks = await renderBatch(batch);
+        if (!blocks.length) continue;
+        const items = await callClaude(blocks, FALLBACK_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages), 8000);
+        fallbackItems.push(...(Array.isArray(items) ? items : []));
+      }
+      console.log(`Takeoff [${jobId}]: fallback extracted ${fallbackItems.length} raw items`);
     }
 
     await browser.close();
     try { fs.unlinkSync(pdfPath); } catch {}
 
-    // Reconciliation pass — deduplicate across batches and pick authoritative dims
-    let finalItems = allItems;
-    if (allItems.length > 0) {
-      job.progress = 'Reconciling results…';
-      console.log(`Takeoff [${jobId}]: reconciling ${allItems.length} raw items`);
-      try {
-        const reconcileMsg = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 8000,
-          messages: [{
-            role: 'user',
-            content: [{ type: 'text', text: RECONCILE_PROMPT(allItems) }],
-          }],
-        });
-        const reconcileRaw = reconcileMsg.content[0]?.text ?? '[]';
-        const reconciled = JSON.parse(reconcileRaw.replace(/```json|```/g, '').trim());
-        if (Array.isArray(reconciled) && reconciled.length > 0) {
-          finalItems = reconciled;
-          console.log(`Takeoff [${jobId}]: reconciled ${allItems.length} → ${finalItems.length} items`);
-        }
-      } catch (e) {
-        console.warn(`Takeoff [${jobId}]: reconciliation failed, using raw items: ${e.message}`);
+    // ── STAGE 3: RECONCILE ────────────────────────────────────────────
+    job.progress = 'Reconciling results…';
+    let finalItems = [];
+
+    if (useFallback) {
+      if (fallbackItems.length > 0) {
+        const reconciled = await callClaude([], FALLBACK_RECONCILE_PROMPT(fallbackItems), 8000);
+        finalItems = Array.isArray(reconciled) && reconciled.length > 0 ? reconciled : fallbackItems;
       }
+    } else {
+      const reconciled = await callClaude([], RECONCILE_PROMPT(scheduleItems, elevationItems, floorPlanCounts), 8000);
+      finalItems = Array.isArray(reconciled) && reconciled.length > 0
+        ? reconciled
+        : [...scheduleItems, ...elevationItems];
     }
+
+    // Normalize fields
+    finalItems = finalItems.map(item => ({
+      room_name:    item.room_name    || 'Unknown',
+      room_number:  item.room_number  ?? null,
+      tag:          item.tag          ?? null,
+      quantity:     item.quantity     || 1,
+      width_inches: item.width_inches ?? null,
+      height_inches:item.height_inches?? null,
+      covering_type:item.covering_type|| 'window',
+      mount_type:   item.mount_type   ?? null,
+      motor_type:   item.motor_type   ?? null,
+      opacity:      item.opacity      ?? null,
+      fabric_spec:  item.fabric_spec  ?? null,
+      product_spec: item.product_spec ?? null,
+      sheet_ref:    item.sheet_ref    ?? null,
+      confidence:   item.confidence   || 'medium',
+      notes:        item.notes        ?? '',
+    }));
 
     console.log(`Takeoff [${jobId}]: complete — ${finalItems.length} final items`);
     job.status = 'done';
