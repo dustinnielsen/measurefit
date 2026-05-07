@@ -1383,15 +1383,27 @@ Return a JSON array, one object per page in order:
 [{ "page": ${pageNums[0]}, "type": "floor_plan", "has_windows": true, "notes": "" }, ...]
 Return ONLY valid JSON. No markdown.`;
 
-// ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────────────────
-const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set containing a window or door schedule.
+// ── SCHEDULE SEARCH (runs on every page — catches schedules embedded in detail sheets) ───
+const SCHEDULE_SEARCH_PROMPT = (pageNums) => `Look at ${pageNums.length} page image(s) (pages ${pageNums.join(', ')} in order).
 
-Extract every window type from the schedule table. Each row in the table is one window type.
+For EACH page: does it contain a window schedule table ANYWHERE on the page — even in a corner, even if the page is mostly drawings or details? A window schedule is a table with columns for window mark/type (A, B, W1, W2…), width, height, and possibly type/material/notes.
+
+Return a JSON array, one object per page:
+[{ "page": ${pageNums[0]}, "has_schedule": false, "schedule_tags": [] }, ...]
+
+If has_schedule is true, also list the window mark/type letters or codes you can see in the schedule (e.g. ["A","B","C","C1","D","E","F","G","G1"]).
+Return ONLY valid JSON. No markdown.`;
+
+// ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────────────────
+const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. One or more of these pages contains a VINYL WINDOW SCHEDULE or similar window/door schedule table — it may be in a corner of a page that is mostly drawings.
+
+Find the schedule table and extract every window type row from it.
 
 For each row return:
-{ "tag": "W1", "quantity": 8, "width_inches": 36, "height_inches": 84, "room_name": "Schedule", "room_number": null, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "page ${pageRange}", "source_type": "schedule", "confidence": "high", "notes": "" }
+{ "tag": "A", "quantity": null, "width_inches": 96, "height_inches": 108, "room_name": "Schedule", "room_number": null, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "page ${pageRange}", "source_type": "schedule", "confidence": "high", "notes": "FIXED, WELDED VINYL" }
 
-Dimensions in schedule are often shown as W×H in feet-inches. Convert to decimal inches (3'-0"=36, 7'-0"=84, 8'-0"=96).
+Note: quantity is null here — it will be filled in from floor plan tag counts.
+Feet-inches conversion: 3'-0"=36, 4'-0"=48, 5'-0"=60, 6'-0"=72, 7'-0"=84, 8'-0"=96, 9'-0"=108, 9'-10"=118, 2'-6"=30, 8'-6"=102.
 Return ONLY valid JSON array. No markdown.`;
 
 // ── STAGE 2B: ELEVATION EXTRACTION ───────────────────────────────────────────
@@ -1420,47 +1432,51 @@ For each window or group:
 Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 
 // ── STAGE 2C: FLOOR PLAN COUNTING ────────────────────────────────────────────
-const FLOOR_PLAN_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages are FLOOR PLANS.
+const FLOOR_PLAN_PROMPT = (pageRange, totalPages, knownTags) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages are FLOOR PLANS.
 
-YOUR ONLY JOB: COUNT window openings per room. Do NOT attempt to read dimensions.
+YOUR ONLY JOB: COUNT window openings. Do NOT attempt to read dimensions.
 
-Window openings in floor plans appear as a gap in an exterior wall with a 3-line symbol (two thin parallel lines spanning the wall thickness, representing the window frame). Do NOT count doors (shown as a gap with an arc swing line).
+${knownTags.length > 0 ? `Windows on these plans are labeled with letter tags: ${knownTags.join(', ')}. Count how many times each tag appears.` : 'Windows appear as gaps in exterior walls with a 3-line symbol. Count each opening.'}
 
-For each room or distinct area on these pages:
-{ "room_name": "Office 201", "room_number": "201", "floor_level": "Level 2", "window_count": 3, "sheet_ref": "page X", "notes": "corner windows" }
+Window openings appear as a gap in an exterior wall with a 3-line symbol (two thin parallel lines spanning the wall thickness). Do NOT count doors (arc swing). Do NOT count interior partitions.
 
-Count carefully. If a room appears on multiple pages in this batch, report it once with the total count visible.
+${knownTags.length > 0 ? `For each TAG found, return one object:
+{ "tag": "A", "window_count": 12, "floor_level": "Level 2", "sheet_ref": "page X", "room_name": "Multiple rooms", "notes": "locations: lobby, corridor" }` : `For each room or area:
+{ "tag": null, "room_name": "Office 201", "room_number": "201", "floor_level": "Level 2", "window_count": 3, "sheet_ref": "page X", "notes": "" }`}
+
+Count carefully. If the same tag appears across multiple rooms on these pages, sum them into one entry per tag.
 Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 
 // ── STAGE 3: RECONCILIATION ───────────────────────────────────────────────────
-const RECONCILE_PROMPT = (scheduleItems, elevItems, fpCounts) => {
-  const fpTotal = fpCounts.reduce((s, r) => s + (r.window_count || 0), 0);
+const RECONCILE_PROMPT = (scheduleItems, elevItems, tagTotals) => {
+  // tagTotals is { "A": 12, "C": 38, "__untagged__": 5, ... }
+  const fpTotal = Object.values(tagTotals).reduce((s, v) => s + v, 0);
   const elevTotal = elevItems.reduce((s, e) => s + (e.quantity || 1), 0);
   const hasSchedule = scheduleItems.length > 0;
   const hasElevations = elevItems.length > 0;
 
   return `You are finalizing a window covering takeoff for a contractor. Combine the data below into a clean, accurate final list.
 
-${hasSchedule ? `WINDOW SCHEDULE (most authoritative — use these quantities and dimensions):
+${hasSchedule ? `WINDOW SCHEDULE — AUTHORITATIVE SOURCE FOR DIMENSIONS (tags and sizes only, quantities come from floor plan tag counts):
 ${JSON.stringify(scheduleItems)}
 
-` : ''}${hasElevations ? `ELEVATION EXTRACTIONS (window sizes read from exterior/interior elevation drawings, ${elevTotal} total units):
+` : ''}${hasElevations ? `ELEVATION EXTRACTIONS (window sizes from elevation drawings, ${elevTotal} total units):
 ${JSON.stringify(elevItems)}
 
-` : ''}FLOOR PLAN COUNTS (room-by-room window counts with no dimensions, ${fpTotal} total units):
-${JSON.stringify(fpCounts)}
+` : ''}FLOOR PLAN TAG COUNTS (how many times each window tag appears in floor plans, ${fpTotal} total windows):
+${JSON.stringify(tagTotals)}
 
 RULES:
-${hasSchedule ? `1. Schedule is authoritative. Use schedule dimensions and quantities. Floor plan counts are for verification only.
-` : `1. No schedule exists. Use elevation dimensions as authoritative. Floor plan counts tell you the total.
-`}2. Group elevation windows by similar size (±3 inches on each axis = same type). Sum quantities across all elevations for each group.
-3. The floor plan total (${fpTotal} windows) is your target count. If elevation totals differ significantly, note the discrepancy and trust floor plans for quantity.
-4. Produce ONE entry per unique window size. Set room_name to "Multiple rooms" and list rooms in notes.
-5. If floor plans show more windows than elevations account for, add an entry with dims null, confidence="low", noting "additional windows — dimensions not found in elevations".
-6. Remove entries where both dims are null unless floor plan counts confirm real windows exist there.
-
-OUTPUT — one object per unique window size:
-{ "room_name": "Multiple rooms", "room_number": null, "tag": null, "quantity": 50, "width_inches": 36, "height_inches": 84, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "see notes", "confidence": "high", "notes": "Levels 2-3; rooms 201-218" }
+${hasSchedule ? `1. SCHEDULE + TAG COUNTS: The schedule gives dimensions per tag (A=96"×108", C=72"×72" etc). The floor plan counts give how many of each tag exist. Multiply them: if schedule says tag C is 72"×72" and floor plans show 38 instances of tag C → one entry: 72"×72" qty=38.
+2. One output entry per unique window tag/size combination.
+3. If a tag appears in floor plan counts but not in the schedule, keep it with dims null and confidence="low".
+4. If a tag appears in the schedule but not in floor plan counts, keep it with quantity=1 and confidence="low".
+` : `1. No schedule. Use elevation dimensions as authoritative. Floor plan counts give quantities.
+2. Group elevation windows by similar size (±3 inches). Sum quantities per size group.
+3. Floor plan total (${fpTotal}) is your target. Flag discrepancies in notes.
+`}
+OUTPUT — one object per unique window tag or size:
+{ "room_name": "Multiple rooms", "room_number": null, "tag": "C", "quantity": 38, "width_inches": 72, "height_inches": 72, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "Schedule p.45", "confidence": "high", "notes": "Single hung vinyl; Levels 2-3" }
 
 Return ONLY valid JSON array. No markdown.`;
 };
@@ -1595,31 +1611,58 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       for (const c of (Array.isArray(results) ? results : [])) {
         if (c.page) pageTypes[c.page] = { type: c.type, hasWindows: c.has_windows };
       }
-      // Any pages not returned by Claude default to unknown
       for (const p of batch) {
         if (!pageTypes[p]) pageTypes[p] = { type: 'unknown', hasWindows: true };
       }
     }
 
-    const elevPages     = pageList.filter(p => ['elevation','section'].includes(pageTypes[p]?.type) && pageTypes[p]?.hasWindows);
-    const fpPages       = pageList.filter(p => pageTypes[p]?.type === 'floor_plan' && pageTypes[p]?.hasWindows);
-    const schedPages    = pageList.filter(p => pageTypes[p]?.type === 'schedule');
-    const unknownPages  = pageList.filter(p => !pageTypes[p] || pageTypes[p]?.type === 'unknown');
+    const elevPages    = pageList.filter(p => ['elevation','section'].includes(pageTypes[p]?.type) && pageTypes[p]?.hasWindows);
+    const fpPages      = pageList.filter(p => pageTypes[p]?.type === 'floor_plan' && pageTypes[p]?.hasWindows);
+    const unknownPages = pageList.filter(p => !pageTypes[p] || pageTypes[p]?.type === 'unknown');
+    // Schedule pages from classification (may miss embedded schedules — supplemented below)
+    const schedPagesFromClassify = pageList.filter(p => pageTypes[p]?.type === 'schedule');
 
-    console.log(`Takeoff [${jobId}]: classified — ${elevPages.length} elevations, ${fpPages.length} floor plans, ${schedPages.length} schedules, ${unknownPages.length} unknown`);
+    console.log(`Takeoff [${jobId}]: classified — ${elevPages.length} elevations, ${fpPages.length} floor plans, ${schedPagesFromClassify.length} schedules, ${unknownPages.length} unknown`);
+
+    // ── STAGE 1B: DEDICATED SCHEDULE SEARCH ─────────────────────────
+    // Scan every non-floor-plan page for embedded schedule tables.
+    // Catches schedules that live on detail/window-type sheets (like page 45).
+    job.progress = 'Searching for window schedule…';
+    const schedulePageSet = new Set(schedPagesFromClassify);
+    const knownTags = [];
+    const candidatePages = pageList.filter(p => !['floor_plan','mep','rcp','site'].includes(pageTypes[p]?.type));
+
+    for (let i = 0; i < candidatePages.length; i += CLASS_BATCH) {
+      if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+      const batch = candidatePages.slice(i, i + CLASS_BATCH);
+      const blocks = await renderBatch(batch);
+      if (!blocks.length) continue;
+      const results = await callClaude(blocks, SCHEDULE_SEARCH_PROMPT(batch), 1200);
+      for (const r of (Array.isArray(results) ? results : [])) {
+        if (r.has_schedule) {
+          schedulePageSet.add(r.page);
+          if (Array.isArray(r.schedule_tags)) {
+            for (const t of r.schedule_tags) if (!knownTags.includes(t)) knownTags.push(t);
+          }
+        }
+      }
+    }
+
+    const schedPages = [...schedulePageSet];
+    console.log(`Takeoff [${jobId}]: schedule pages found: [${schedPages.join(', ')}], tags: [${knownTags.join(', ')}]`);
 
     // ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────
     const scheduleItems = [];
-    for (let i = 0; i < schedPages.length; i += 3) {
+    for (let i = 0; i < schedPages.length; i += 2) {
       if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
-      const batch = schedPages.slice(i, i + 3);
+      const batch = schedPages.slice(i, i + 2);
       job.progress = 'Reading window schedule…';
       const blocks = await renderBatch(batch);
       if (!blocks.length) continue;
       const items = await callClaude(blocks, SCHEDULE_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages));
       scheduleItems.push(...(Array.isArray(items) ? items : []));
     }
-    console.log(`Takeoff [${jobId}]: ${scheduleItems.length} items from schedule`);
+    console.log(`Takeoff [${jobId}]: ${scheduleItems.length} window types from schedule`);
 
     // ── STAGE 2B: ELEVATION EXTRACTION ───────────────────────────────
     const elevationItems = [];
@@ -1636,23 +1679,31 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
     }
     console.log(`Takeoff [${jobId}]: ${elevationItems.length} items from elevations`);
 
-    // ── STAGE 2C: FLOOR PLAN COUNTING ────────────────────────────────
+    // ── STAGE 2C: FLOOR PLAN COUNTING (tag-aware) ────────────────────
     const floorPlanCounts = [];
-    for (let i = 0; i < fpPages.length; i += 3) {
+    const allFpPages = [...new Set([...fpPages, ...unknownPages])];
+    for (let i = 0; i < allFpPages.length; i += 3) {
       if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
-      const batch = fpPages.slice(i, i + 3);
+      const batch = allFpPages.slice(i, i + 3);
       const pass = Math.floor(i / 3) + 1;
-      const total = Math.ceil(fpPages.length / 3);
+      const total = Math.ceil(allFpPages.length / 3);
       job.progress = `Counting windows in floor plans (${pass}/${total})…`;
       const blocks = await renderBatch(batch);
       if (!blocks.length) continue;
-      const counts = await callClaude(blocks, FLOOR_PLAN_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages));
+      const counts = await callClaude(blocks, FLOOR_PLAN_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages, knownTags));
       floorPlanCounts.push(...(Array.isArray(counts) ? counts : []));
     }
-    console.log(`Takeoff [${jobId}]: floor plan counts — ${floorPlanCounts.reduce((s, r) => s + (r.window_count || 0), 0)} total windows across ${floorPlanCounts.length} rooms`);
+
+    // Aggregate tag counts across all floor plan pages
+    const tagTotals = {};
+    for (const entry of floorPlanCounts) {
+      const tag = entry.tag ?? '__untagged__';
+      tagTotals[tag] = (tagTotals[tag] || 0) + (entry.window_count || 0);
+    }
+    const fpTotal = Object.values(tagTotals).reduce((s, v) => s + v, 0);
+    console.log(`Takeoff [${jobId}]: floor plan tag totals — ${fpTotal} windows:`, tagTotals);
 
     // ── FALLBACK: no useful staged data found ────────────────────────
-    // If classification found no elevations and no schedule, run old approach on all pages
     const useFallback = scheduleItems.length === 0 && elevationItems.length === 0;
     const fallbackItems = [];
 
@@ -1686,7 +1737,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
         finalItems = Array.isArray(reconciled) && reconciled.length > 0 ? reconciled : fallbackItems;
       }
     } else {
-      const reconciled = await callClaude([], RECONCILE_PROMPT(scheduleItems, elevationItems, floorPlanCounts), 8000);
+      const reconciled = await callClaude([], RECONCILE_PROMPT(scheduleItems, elevationItems, tagTotals), 8000);
       finalItems = Array.isArray(reconciled) && reconciled.length > 0
         ? reconciled
         : [...scheduleItems, ...elevationItems];
