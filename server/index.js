@@ -1368,44 +1368,65 @@ const TAKEOFF_PROMPT = (pageList, totalPages) => `You are helping a window cover
 
 These are pages ${pageList} from a ${totalPages}-page plan set.
 
-YOUR TASK: Find every window opening in this building and extract its dimensions and location.
+YOUR TASK: Extract every window opening with accurate dimensions and counts.
 
-DO NOT limit yourself to windows that already have shade/blind callouts. The contractor needs ALL windows — they will decide what covering to put on each one. Even if a plan has no window covering schedule, you must still extract every window.
+CRITICAL — AVOID DOUBLE COUNTING:
+- If you see a WINDOW/DOOR SCHEDULE (a table listing window types like W1, W2 with sizes and quantities): extract one entry per window TYPE from the schedule. The schedule quantity IS the count for that type. Set source_type="schedule".
+- If you see individual window callouts in a FLOOR PLAN or ELEVATION that reference a schedule tag (W1, W2, etc.): DO NOT create new entries for these — the schedule already accounts for them. Only note the tag and count instances if you suspect the schedule quantity is wrong.
+- If you see windows in a floor plan with NO schedule tag and no schedule visible: create one entry per distinct opening (or group identical ones in the same room). Set source_type="floor_plan".
+- If you see windows in an ELEVATION with explicit dimension lines: these are usually the most accurate — record them with source_type="elevation".
 
 WHERE TO LOOK:
-- Floor plans: windows are shown as gaps in walls, often with dimension strings above or below the opening
-- Exterior elevations: show window width and height with dimension lines
-- Interior elevations: show window openings and heights above finished floor
-- Window/door schedules: tables listing window types with rough or finish opening sizes
-- Window type tags (e.g. W1, W2, A, B): cross-reference to any schedule shown
-- Section drawings: show sill height and head height which gives you the height
+- Window/door schedules: tables listing window types with rough opening sizes — HIGHEST PRIORITY
+- Exterior elevations: dimension lines showing exact width and height — HIGH PRIORITY
+- Interior elevations: window openings with heights above finished floor
+- Floor plans: windows as gaps in walls, often with tag only (W1 etc.)
+- Section drawings: sill height and head height give you the opening height
 
 HOW TO READ DIMENSIONS:
-- Dimensions are shown as feet-inches (e.g. 3'-0" = 36 inches, 2'-6" = 30 inches)
+- Dimensions shown as feet-inches: 3'-0" = 36 inches, 2'-6" = 30 inches, 3'6" = 42 inches
 - Convert ALL dimensions to decimal inches
-- Rough opening is acceptable if finish opening not given
-- If only a window type tag is shown and no schedule is visible, note the tag and set dims to null
+- Finish opening preferred; rough opening acceptable if finish not shown
+- If a tag is shown (W1) but dims are not visible on this page, set dims to null — do NOT guess
 
-For EACH window location found return a JSON object with:
-- room_name: room or space name from the plan
+For EACH entry return a JSON object with:
+- room_name: room or space name (use "Schedule" if from a window schedule table)
 - room_number: room number if labeled, otherwise null
-- tag: window type tag (e.g. "W1", "A", "TYPE 3") or shade tag if shown, or null
-- quantity: number of identical windows at this location (default 1)
+- tag: window type tag (e.g. "W1", "A", "TYPE 3") or null
+- quantity: number of this window type (from schedule quantity column, or count of identical instances in same room)
 - width_inches: opening width in decimal inches. null only if truly unreadable.
 - height_inches: opening height in decimal inches. null only if truly unreadable.
-- covering_type: if a shade/blind type is called out use it; otherwise use "window" as a placeholder
+- covering_type: shade/blind type if called out, otherwise "window"
 - mount_type: "inside", "outside", or "recessed" if specified, otherwise null
 - motor_type: "motorized" or "manual" if specified, otherwise null
-- opacity: if specified ("light filtering", "room darkening", "blackout", "solar screen"), otherwise null
-- fabric_spec: any fabric or material callout, otherwise null
-- product_spec: any brand/product callout, otherwise null
-- sheet_ref: sheet number where you found this window
-- confidence: "high" if you can clearly read the dimensions; "medium" if you are inferring from scale or partial info; "low" if dimensions are not readable
-- notes: floor level, sill height, any special conditions (corner window, skylight, etc.)
-
-Be thorough — a missed window means a missed sale for the contractor. Include every window opening you can find.
+- opacity: "light filtering", "room darkening", "blackout", or "solar screen" if specified, otherwise null
+- fabric_spec: fabric or material callout, otherwise null
+- product_spec: brand/product callout, otherwise null
+- sheet_ref: sheet number where you found this
+- source_type: "schedule", "elevation", or "floor_plan"
+- confidence: "high" if dimensions clearly readable; "medium" if inferred; "low" if not readable
+- notes: floor level, sill height, any special conditions
 
 Return ONLY a valid JSON array. No markdown, no explanation. If truly none found return [].`;
+
+const RECONCILE_PROMPT = (items) => `You are a window covering takeoff specialist reconciling a raw window list extracted from architectural plans across multiple passes. The same window may appear multiple times — from a schedule, a floor plan, and an elevation.
+
+RAW ITEMS (${items.length} entries, likely contains duplicates):
+${JSON.stringify(items)}
+
+YOUR JOB: Return a single clean, accurate, deduplicated list following these rules:
+
+DEDUPLICATION RULES:
+1. Schedule entries (source_type="schedule") are AUTHORITATIVE for dimensions and quantity — keep them and remove matching floor_plan/elevation instances that have the same tag
+2. If no schedule entry exists for a tag, use elevation dimensions (source_type="elevation") over floor plan dimensions
+3. Windows with the same tag AND similar dimensions from different source types → merge into ONE entry using the most reliable source's dimensions and the schedule quantity (or sum of floor_plan instances if no schedule)
+4. Windows in DIFFERENT rooms with the same dimensions → keep as SEPARATE entries (each room has its own windows)
+5. Identical entries from the same room (exact duplicate passes) → collapse into one, do not double the quantity
+6. If schedule says W1×8 but floor plan instances suggest a different count, keep schedule quantity but add a note about the discrepancy
+
+OUTPUT: Return a clean JSON array. Each object must have all original fields (room_name, room_number, tag, quantity, width_inches, height_inches, covering_type, mount_type, motor_type, opacity, fabric_spec, product_spec, sheet_ref, confidence, notes). Remove source_type from final output.
+
+Return ONLY a valid JSON array. No markdown, no explanation.`;
 
 async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const job = takeoffJobs.get(jobId);
@@ -1447,7 +1468,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
   const renderPageToJpeg = async (pageNum) => {
     return bPage.evaluate(async (pNum) => {
       const pdfPage = await window.__pdf.getPage(pNum);
-      const viewport = pdfPage.getViewport({ scale: 1.5 });
+      const viewport = pdfPage.getViewport({ scale: 2.0 });
       const canvas = document.getElementById('c');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
@@ -1455,13 +1476,13 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-      return canvas.toDataURL('image/jpeg', 0.75).replace('data:image/jpeg;base64,', '');
+      return canvas.toDataURL('image/jpeg', 0.90).replace('data:image/jpeg;base64,', '');
     }, pageNum);
   };
 
   try {
-    const PAGES_PER_BATCH = 5;
-    const JOB_TIMEOUT_MS = 7 * 60 * 1000;
+    const PAGES_PER_BATCH = 3;
+    const JOB_TIMEOUT_MS = 9 * 60 * 1000;
     const jobStart = Date.now();
     const allItems = [];
     let passNum = 0;
@@ -1484,7 +1505,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
       const start = batch[0];
       const end = batch[batch.length - 1];
 
-      job.progress = `Analyzing pages ${start}–${end} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
+      job.progress = `Scanning pages ${start}–${end} of ${totalPages} (pass ${passNum}/${totalPasses})…`;
       console.log(`Takeoff [${jobId}]: ${job.progress}`);
 
       const imageBlocks = [];
@@ -1521,14 +1542,39 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
     await browser.close();
     try { fs.unlinkSync(pdfPath); } catch {}
 
-    console.log(`Takeoff [${jobId}]: complete — ${allItems.length} total items across ${passNum} passes`);
+    // Reconciliation pass — deduplicate across batches and pick authoritative dims
+    let finalItems = allItems;
+    if (allItems.length > 0) {
+      job.progress = 'Reconciling results…';
+      console.log(`Takeoff [${jobId}]: reconciling ${allItems.length} raw items`);
+      try {
+        const reconcileMsg = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8000,
+          messages: [{
+            role: 'user',
+            content: [{ type: 'text', text: RECONCILE_PROMPT(allItems) }],
+          }],
+        });
+        const reconcileRaw = reconcileMsg.content[0]?.text ?? '[]';
+        const reconciled = JSON.parse(reconcileRaw.replace(/```json|```/g, '').trim());
+        if (Array.isArray(reconciled) && reconciled.length > 0) {
+          finalItems = reconciled;
+          console.log(`Takeoff [${jobId}]: reconciled ${allItems.length} → ${finalItems.length} items`);
+        }
+      } catch (e) {
+        console.warn(`Takeoff [${jobId}]: reconciliation failed, using raw items: ${e.message}`);
+      }
+    }
+
+    console.log(`Takeoff [${jobId}]: complete — ${finalItems.length} final items`);
     job.status = 'done';
     job.result = {
       success: true,
       projectName: projectName || 'Untitled Project',
       totalPages,
-      itemCount: allItems.length,
-      items: allItems,
+      itemCount: finalItems.length,
+      items: finalItems,
     };
   } catch (err) {
     try { browser.close(); } catch {}
