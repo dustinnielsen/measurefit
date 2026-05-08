@@ -1407,16 +1407,22 @@ Example: A 9'-10" wide assembly labeled E with three sections of 3'-0" + 3'-4" +
 = 3 individual panes, each approximately 36" wide. You would quote 3 shades, not one 118" shade.
 
 ━━━ HOW TO FIND INDIVIDUAL PANE DIMS ━━━
-1. Look at the WINDOW TYPE DRAWINGS (the scaled diagrams of each type, labeled A, B, C…)
-2. Inside each drawing, find the dimension strings on INDIVIDUAL SECTIONS (the subdivisions between mullions)
-3. Those subdivision dimensions = individual pane width and height
-4. Count how many individually-framed panes are in one assembly (panes_per_assembly)
+STEP 1 — PANE WIDTH: Look at the WINDOW TYPE DRAWINGS (scaled diagrams labeled A, B, C…).
+  Find the dimension strings on individual sections between mullions. That subdivision width = pane width.
+  Count how many side-by-side panes make up one assembly (panes_per_assembly).
+  Example: type E drawing shows 3'-0" + 3'-4" + 3'-0" → pane_width=36", panes_per_assembly=3
 
-If no type drawings exist, use the schedule table dimensions but set panes_per_assembly=1
-and note "assembly dims — verify pane count in field".
+STEP 2 — PANE HEIGHT: Window panes almost always run the full assembly height (no horizontal mullions
+  dividing the pane into top/bottom sections). So pane_height = the full window HEIGHT from the schedule
+  table row for that type.
+  Exception: if the type drawing clearly shows a horizontal bar dividing the window height, measure each section.
+
+STEP 3 — FALLBACK: If no type drawings exist, use the schedule table dimensions directly:
+  pane_width = schedule width ÷ estimated_pane_count, or use as-is with panes_per_assembly=1.
+  Add note "assembly dims — verify pane count in field".
 
 ━━━ WHAT TO IGNORE ━━━
-- The OVERALL assembly width/height from the schedule table (use it only as a fallback)
+- The OVERALL assembly WIDTH from the schedule table (use only the subdivided width from the type drawing)
 - Transom strips that are fixed and very narrow (< 18" tall) — these rarely get shades; set a note
 - Door panels within an assembly (mark in notes, do not count as a shade pane)
 
@@ -1747,10 +1753,11 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages, hintSchedu
     const floorPlanCounts = [];
 
     if (knownTags.length > 0) {
-      // Known tags → scan ALL pages for those specific tag labels.
+      // Known tags → scan ALL pages except confirmed schedule pages.
       // Bypasses classifier — floor plans misclassified as elevations/details
       // would be missed if we only scan fpPages+unknownPages.
-      const tagScanPages = pageList;
+      // Exclude schedule pages: they show tags in a table context, not as window labels.
+      const tagScanPages = pageList.filter(p => !schedPages.includes(p));
       for (let i = 0; i < tagScanPages.length; i += 3) {
         if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
         const batch = tagScanPages.slice(i, i + 3);
