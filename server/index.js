@@ -1463,28 +1463,21 @@ Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 // This bypasses classifier errors (floor plans misclassified as elevations, etc.)
 const TAG_COUNT_PROMPT = (pageRange, totalPages, knownTags) => `These are pages ${pageRange} from a ${totalPages}-page plan set.
 
-TASK: Count how many times each window type tag appears as a LABEL directly on a WINDOW OPENING in a floor plan drawing (top-down overhead view of rooms/spaces).
+TASK: If any of these pages show a FLOOR PLAN (top-down overhead view of rooms/spaces), count how many times each window type tag appears labeling a window opening.
 
-Window type tags to count: ${knownTags.join(', ')}
+Window type tags to look for: ${knownTags.join(', ')}
 
-A VALID window type tag looks like:
-- A single letter (A, B, C…) placed immediately beside a window opening symbol in an exterior wall
-- May be inside a small circle, diamond, or triangle
-- Always touching or very close to the wall line that has the window gap
+A window type tag is a small letter or number placed directly next to a window opening in an exterior wall (a thin gap in the wall line, often with two parallel lines inside the gap). Tags may appear inside a small circle, triangle, or diamond shape right at the window.
 
-DO NOT COUNT any of these — they look similar but are NOT window labels:
-- COLUMN GRID LINES: large letters (A, B, C…) printed along the TOP or BOTTOM border/margin of the sheet, used to label structural column lines across the building
-- DETAIL CALLOUTS: a letter+number combo inside a circle with a leader line pointing to a spot (e.g. "A/3" or "B-2") — these reference detail drawings, not window types
-- ROOM LABELS or KEYNOTES: letters inside rooms labeling the room type or finish
-- ELEVATION MARKERS: circles with a letter and arrow showing which direction an elevation looks
-- Tags in schedule tables, type-drawing sheets, legends, or title blocks
+DO NOT count:
+- Column grid lines: large letters/numbers along the sheet's outer border
+- Detail reference callouts: letter+number pairs in circles pointing to specific spots (e.g. "A/3")
+- Room labels, room numbers, or finish keynotes
 
-If this page is an elevation view (side view of building face) rather than a floor plan (top-down view): return [].
-If this page has no floor plan content: return [].
+For each window type tag you find on window openings in floor plan views, report the total count across all pages in this batch:
+{ "tag": "C", "count": 12, "notes": "level 2 floor plan" }
 
-For each window type tag found on actual window openings in a floor plan, sum all instances on these pages:
-{ "tag": "A", "count": 5, "notes": "level 2 floor plan" }
-
+If these pages have no floor plan views with labeled windows, return [].
 Return ONLY valid JSON array. No markdown.`;
 
 // Used when knownTags is empty: general window count from floor plan pages only
