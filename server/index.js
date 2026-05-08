@@ -1395,42 +1395,19 @@ If has_schedule is true, also list the window mark/type letters or codes you can
 Return ONLY valid JSON. No markdown.`;
 
 // ── STAGE 2A: SCHEDULE EXTRACTION ────────────────────────────────────────────
-const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages contain window type DRAWINGS and/or a window schedule TABLE.
+const SCHEDULE_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages contain a window schedule TABLE and/or window type drawings.
 
-YOUR TASK: For each window type (A, B, C, D, E, F, G, etc.) determine the dimensions of each INDIVIDUAL PANE that would receive its own shade — NOT the overall assembly size.
+YOUR TASK: Read the WINDOW SCHEDULE TABLE and return one entry per window type.
 
-━━━ CRITICAL DISTINCTION ━━━
-A window "assembly" often contains multiple individual panes separated by mullions or frames.
-Each separately-framed glass opening = one shade = one pane.
+The window schedule is a table with columns like: Mark/Type | Width | Height | Description/Notes.
+Read each row of the table directly. Do NOT analyze window type drawings for dimensions.
 
-Example: A 9'-10" wide assembly labeled E with three sections of 3'-0" + 3'-4" + 3'-0"
-= 3 individual panes, each approximately 36" wide. You would quote 3 shades, not one 118" shade.
-
-━━━ HOW TO FIND INDIVIDUAL PANE DIMS ━━━
-STEP 1 — SINGLE PANE vs MULTI-PANE (most important step):
-  Look at the type drawing for each window type. Does the drawing show vertical framing members
-  (mullions) dividing the window into side-by-side sections?
-  • NO vertical mullions → SINGLE PANE: panes_per_assembly=1, pane_width = full assembly width from schedule table
-  • YES vertical mullions → MULTI-PANE: read the subdivision dimensions between mullions (see Step 2)
-  Common single-pane examples: single-hung, double-hung, casement, fixed picture window (one rectangle)
-  Common multi-pane examples: paired windows, sliding glass doors, store-front assemblies
-
-STEP 2 — MULTI-PANE WIDTH: Find the dimension strings on individual sections between mullions.
-  Each subdivision dimension = one pane width.
-  Count how many side-by-side panes (panes_per_assembly).
-  Example: type E drawing shows 3'-0" + 3'-4" + 3'-0" sections → pane_width≈36", panes_per_assembly=3
-  WARNING: Do NOT confuse wall-to-window offset dimensions (small dims at edges) with pane widths.
-
-STEP 3 — PANE HEIGHT: The full assembly HEIGHT from the schedule table row = pane height.
-  (Panes run full height — horizontal bars are rails/rails, not separate shade sections.)
-
-STEP 4 — FALLBACK: If no type drawings visible, use schedule table width/height directly with panes_per_assembly=1.
-  Add note "assembly dims — verify pane count in field".
-
-━━━ WHAT TO IGNORE ━━━
-- Small offset dimensions at the edges of the type drawing (wall reveal, frame overlap)
-- Transom strips that are fixed and very narrow (< 18" tall) — these rarely get shades; set a note
-- Door panels within an assembly (mark in notes, do not count as a shade pane)
+━━━ READING THE TABLE ━━━
+- tag: the window mark (A, B, C, D, E, F, G, G1, etc.)
+- width_inches: WIDTH column value, converted to inches
+- height_inches: HEIGHT column value, converted to inches
+- panes_per_assembly: set to 1 for all types. If the description column mentions "2-panel", "3-lite", "pair", or similar, note it and set accordingly.
+- notes: copy the description/type text from the table (e.g. "single hung vinyl", "fixed")
 
 ━━━ FEET-INCHES CONVERSION ━━━
 2'-6"=30, 2'-11"=35, 3'-0"=36, 3'-4"=40, 3'-6"=42, 4'-0"=48, 5'-0"=60,
@@ -1438,10 +1415,10 @@ STEP 4 — FALLBACK: If no type drawings visible, use schedule table width/heigh
 
 For each window type return ONE object:
 {
-  "tag": "E",
-  "width_inches": 36,
-  "height_inches": 72,
-  "panes_per_assembly": 3,
+  "tag": "A",
+  "width_inches": 96,
+  "height_inches": 108,
+  "panes_per_assembly": 1,
   "covering_type": "window",
   "mount_type": null,
   "motor_type": null,
@@ -1451,7 +1428,7 @@ For each window type return ONE object:
   "sheet_ref": "page ${pageRange}",
   "source_type": "schedule",
   "confidence": "high",
-  "notes": "3-pane assembly; 3'-0\"+3'-4\"+3'-0\"; fixed welded vinyl; balcony door"
+  "notes": "8'-0\" x 9'-0\"; fixed welded vinyl"
 }
 
 Return ONLY valid JSON array. No markdown.`;
@@ -1870,6 +1847,8 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages, hintSchedu
     }));
 
     console.log(`Takeoff [${jobId}]: complete — ${finalItems.length} final items`);
+    console.log(`Takeoff [${jobId}]: scheduleItems =`, JSON.stringify(scheduleItems));
+    console.log(`Takeoff [${jobId}]: tagTotals =`, JSON.stringify(tagTotals));
     job.status = 'done';
     job.result = {
       success: true,
@@ -1877,6 +1856,7 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages, hintSchedu
       totalPages,
       itemCount: finalItems.length,
       items: finalItems,
+      _debug: { scheduleItems, tagTotals, elevationItems },
     };
   } catch (err) {
     try { browser.close(); } catch {}
