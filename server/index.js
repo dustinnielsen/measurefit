@@ -1407,22 +1407,28 @@ Example: A 9'-10" wide assembly labeled E with three sections of 3'-0" + 3'-4" +
 = 3 individual panes, each approximately 36" wide. You would quote 3 shades, not one 118" shade.
 
 ━━━ HOW TO FIND INDIVIDUAL PANE DIMS ━━━
-STEP 1 — PANE WIDTH: Look at the WINDOW TYPE DRAWINGS (scaled diagrams labeled A, B, C…).
-  Find the dimension strings on individual sections between mullions. That subdivision width = pane width.
-  Count how many side-by-side panes make up one assembly (panes_per_assembly).
-  Example: type E drawing shows 3'-0" + 3'-4" + 3'-0" → pane_width=36", panes_per_assembly=3
+STEP 1 — SINGLE PANE vs MULTI-PANE (most important step):
+  Look at the type drawing for each window type. Does the drawing show vertical framing members
+  (mullions) dividing the window into side-by-side sections?
+  • NO vertical mullions → SINGLE PANE: panes_per_assembly=1, pane_width = full assembly width from schedule table
+  • YES vertical mullions → MULTI-PANE: read the subdivision dimensions between mullions (see Step 2)
+  Common single-pane examples: single-hung, double-hung, casement, fixed picture window (one rectangle)
+  Common multi-pane examples: paired windows, sliding glass doors, store-front assemblies
 
-STEP 2 — PANE HEIGHT: Window panes almost always run the full assembly height (no horizontal mullions
-  dividing the pane into top/bottom sections). So pane_height = the full window HEIGHT from the schedule
-  table row for that type.
-  Exception: if the type drawing clearly shows a horizontal bar dividing the window height, measure each section.
+STEP 2 — MULTI-PANE WIDTH: Find the dimension strings on individual sections between mullions.
+  Each subdivision dimension = one pane width.
+  Count how many side-by-side panes (panes_per_assembly).
+  Example: type E drawing shows 3'-0" + 3'-4" + 3'-0" sections → pane_width≈36", panes_per_assembly=3
+  WARNING: Do NOT confuse wall-to-window offset dimensions (small dims at edges) with pane widths.
 
-STEP 3 — FALLBACK: If no type drawings exist, use the schedule table dimensions directly:
-  pane_width = schedule width ÷ estimated_pane_count, or use as-is with panes_per_assembly=1.
+STEP 3 — PANE HEIGHT: The full assembly HEIGHT from the schedule table row = pane height.
+  (Panes run full height — horizontal bars are rails/rails, not separate shade sections.)
+
+STEP 4 — FALLBACK: If no type drawings visible, use schedule table width/height directly with panes_per_assembly=1.
   Add note "assembly dims — verify pane count in field".
 
 ━━━ WHAT TO IGNORE ━━━
-- The OVERALL assembly WIDTH from the schedule table (use only the subdivided width from the type drawing)
+- Small offset dimensions at the edges of the type drawing (wall reveal, frame overlap)
 - Transom strips that are fixed and very narrow (< 18" tall) — these rarely get shades; set a note
 - Door panels within an assembly (mark in notes, do not count as a shade pane)
 
@@ -1480,22 +1486,28 @@ Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 // This bypasses classifier errors (floor plans misclassified as elevations, etc.)
 const TAG_COUNT_PROMPT = (pageRange, totalPages, knownTags) => `These are pages ${pageRange} from a ${totalPages}-page plan set.
 
-TASK: Count how many times each window type tag appears as a LABEL on individual window openings in floor plan drawings (top-down overhead views of rooms/spaces).
+TASK: Count how many times each window type tag appears as a LABEL directly on a WINDOW OPENING in a floor plan drawing (top-down overhead view of rooms/spaces).
 
 Window type tags to count: ${knownTags.join(', ')}
 
-These tags appear as small letters — sometimes in a circle, diamond, or triangle symbol — placed directly next to a window opening in a floor plan view.
+A VALID window type tag looks like:
+- A single letter (A, B, C…) placed immediately beside a window opening symbol in an exterior wall
+- May be inside a small circle, diamond, or triangle
+- Always touching or very close to the wall line that has the window gap
 
-DO NOT count tags that appear in:
-- Schedule tables (a grid with tag + width + height + notes columns)
-- Window type drawings (a scaled diagram showing window construction)
-- Legend boxes, key notes, or general notes sections
-- Title blocks or sheet borders
+DO NOT COUNT any of these — they look similar but are NOT window labels:
+- COLUMN GRID LINES: large letters (A, B, C…) printed along the TOP or BOTTOM border/margin of the sheet, used to label structural column lines across the building
+- DETAIL CALLOUTS: a letter+number combo inside a circle with a leader line pointing to a spot (e.g. "A/3" or "B-2") — these reference detail drawings, not window types
+- ROOM LABELS or KEYNOTES: letters inside rooms labeling the room type or finish
+- ELEVATION MARKERS: circles with a letter and arrow showing which direction an elevation looks
+- Tags in schedule tables, type-drawing sheets, legends, or title blocks
 
-For each tag you see labeling actual window openings in floor plan views, return one entry per tag per page batch:
-{ "tag": "A", "count": 5, "notes": "floor plan level 2" }
+If this page is an elevation view (side view of building face) rather than a floor plan (top-down view): return [].
+If this page has no floor plan content: return [].
 
-Only return tags you actually observe labeling individual window openings. Return [] if these pages contain no floor plan views with labeled windows.
+For each window type tag found on actual window openings in a floor plan, sum all instances on these pages:
+{ "tag": "A", "count": 5, "notes": "level 2 floor plan" }
+
 Return ONLY valid JSON array. No markdown.`;
 
 // Used when knownTags is empty: general window count from floor plan pages only
