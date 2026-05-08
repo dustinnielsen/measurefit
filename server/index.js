@@ -1469,20 +1469,39 @@ For each window or group:
 
 Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 
-// ── STAGE 2C: FLOOR PLAN COUNTING ────────────────────────────────────────────
-const FLOOR_PLAN_PROMPT = (pageRange, totalPages, knownTags) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages are FLOOR PLANS.
+// ── STAGE 2C: FLOOR PLAN TAG COUNTING ────────────────────────────────────────
+// Used when knownTags is non-empty: scans ALL pages for tag labels on windows.
+// This bypasses classifier errors (floor plans misclassified as elevations, etc.)
+const TAG_COUNT_PROMPT = (pageRange, totalPages, knownTags) => `These are pages ${pageRange} from a ${totalPages}-page plan set.
+
+TASK: Count how many times each window type tag appears as a LABEL on individual window openings in floor plan drawings (top-down overhead views of rooms/spaces).
+
+Window type tags to count: ${knownTags.join(', ')}
+
+These tags appear as small letters — sometimes in a circle, diamond, or triangle symbol — placed directly next to a window opening in a floor plan view.
+
+DO NOT count tags that appear in:
+- Schedule tables (a grid with tag + width + height + notes columns)
+- Window type drawings (a scaled diagram showing window construction)
+- Legend boxes, key notes, or general notes sections
+- Title blocks or sheet borders
+
+For each tag you see labeling actual window openings in floor plan views, return one entry per tag per page batch:
+{ "tag": "A", "count": 5, "notes": "floor plan level 2" }
+
+Only return tags you actually observe labeling individual window openings. Return [] if these pages contain no floor plan views with labeled windows.
+Return ONLY valid JSON array. No markdown.`;
+
+// Used when knownTags is empty: general window count from floor plan pages only
+const FLOOR_PLAN_PROMPT = (pageRange, totalPages) => `These are pages ${pageRange} from a ${totalPages}-page plan set. These pages are FLOOR PLANS.
 
 YOUR ONLY JOB: COUNT window openings. Do NOT attempt to read dimensions.
 
-${knownTags.length > 0 ? `Windows on these plans are labeled with letter tags: ${knownTags.join(', ')}. Count how many times each tag appears.` : 'Windows appear as gaps in exterior walls with a 3-line symbol. Count each opening.'}
+Windows appear as gaps in exterior walls with a 3-line symbol (two thin parallel lines spanning the wall thickness). Do NOT count doors (arc swing). Do NOT count interior partitions.
 
-Window openings appear as a gap in an exterior wall with a 3-line symbol (two thin parallel lines spanning the wall thickness). Do NOT count doors (arc swing). Do NOT count interior partitions.
+For each room or area:
+{ "tag": null, "room_name": "Office 201", "room_number": "201", "floor_level": "Level 2", "window_count": 3, "sheet_ref": "page X", "notes": "" }
 
-${knownTags.length > 0 ? `For each TAG found, return one object:
-{ "tag": "A", "window_count": 12, "floor_level": "Level 2", "sheet_ref": "page X", "room_name": "Multiple rooms", "notes": "locations: lobby, corridor" }` : `For each room or area:
-{ "tag": null, "room_name": "Office 201", "room_number": "201", "floor_level": "Level 2", "window_count": 3, "sheet_ref": "page X", "notes": "" }`}
-
-Count carefully. If the same tag appears across multiple rooms on these pages, sum them into one entry per tag.
 Return ONLY valid JSON array. No markdown. Return [] if no windows found.`;
 
 // ── STAGE 3: RECONCILIATION ───────────────────────────────────────────────────
@@ -1544,7 +1563,7 @@ RAW: ${JSON.stringify(items)}
 
 Return clean JSON array with fields: room_name, room_number, tag, quantity, width_inches, height_inches, covering_type, mount_type, motor_type, opacity, fabric_spec, product_spec, sheet_ref, confidence, notes. No markdown.`;
 
-async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
+async function runTakeoffJob(jobId, pdfPath, projectName, totalPages, hintSchedulePages = []) {
   const job = takeoffJobs.get(jobId);
   const fs = require('fs');
   const path = require('path');
@@ -1671,8 +1690,9 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
     // ── STAGE 1B: DEDICATED SCHEDULE SEARCH ─────────────────────────
     // Scan every non-floor-plan page for embedded schedule tables.
     // Catches schedules that live on detail/window-type sheets (like page 45).
+    // Any pages the user told us about are seeded in directly — skip search for those.
     job.progress = 'Searching for window schedule…';
-    const schedulePageSet = new Set(schedPagesFromClassify);
+    const schedulePageSet = new Set([...schedPagesFromClassify, ...hintSchedulePages]);
     const knownTags = [];
     const candidatePages = pageList.filter(p => !['floor_plan','mep','rcp','site'].includes(pageTypes[p]?.type));
 
@@ -1723,26 +1743,48 @@ async function runTakeoffJob(jobId, pdfPath, projectName, totalPages) {
     }
     console.log(`Takeoff [${jobId}]: ${elevationItems.length} items from elevations`);
 
-    // ── STAGE 2C: FLOOR PLAN COUNTING (tag-aware) ────────────────────
+    // ── STAGE 2C: FLOOR PLAN COUNTING ────────────────────────────────
     const floorPlanCounts = [];
-    const allFpPages = [...new Set([...fpPages, ...unknownPages])];
-    for (let i = 0; i < allFpPages.length; i += 3) {
-      if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
-      const batch = allFpPages.slice(i, i + 3);
-      const pass = Math.floor(i / 3) + 1;
-      const total = Math.ceil(allFpPages.length / 3);
-      job.progress = `Counting windows in floor plans (${pass}/${total})…`;
-      const blocks = await renderBatch(batch);
-      if (!blocks.length) continue;
-      const counts = await callClaude(blocks, FLOOR_PLAN_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages, knownTags));
-      floorPlanCounts.push(...(Array.isArray(counts) ? counts : []));
+
+    if (knownTags.length > 0) {
+      // Known tags → scan ALL pages for those specific tag labels.
+      // Bypasses classifier — floor plans misclassified as elevations/details
+      // would be missed if we only scan fpPages+unknownPages.
+      const tagScanPages = pageList;
+      for (let i = 0; i < tagScanPages.length; i += 3) {
+        if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+        const batch = tagScanPages.slice(i, i + 3);
+        const pass = Math.floor(i / 3) + 1;
+        const total = Math.ceil(tagScanPages.length / 3);
+        job.progress = `Counting window tags in plans (${pass}/${total})…`;
+        const blocks = await renderBatch(batch);
+        if (!blocks.length) continue;
+        const counts = await callClaude(blocks, TAG_COUNT_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages, knownTags));
+        floorPlanCounts.push(...(Array.isArray(counts) ? counts : []));
+      }
+    } else {
+      // No known tags → scan classified floor plans + unknowns for general counts
+      const allFpPages = [...new Set([...fpPages, ...unknownPages])];
+      for (let i = 0; i < allFpPages.length; i += 3) {
+        if (Date.now() - jobStart > JOB_TIMEOUT_MS) break;
+        const batch = allFpPages.slice(i, i + 3);
+        const pass = Math.floor(i / 3) + 1;
+        const total = Math.ceil(allFpPages.length / 3);
+        job.progress = `Counting windows in floor plans (${pass}/${total})…`;
+        const blocks = await renderBatch(batch);
+        if (!blocks.length) continue;
+        const counts = await callClaude(blocks, FLOOR_PLAN_PROMPT(`${batch[0]}–${batch[batch.length-1]}`, totalPages));
+        floorPlanCounts.push(...(Array.isArray(counts) ? counts : []));
+      }
     }
 
-    // Aggregate tag counts across all floor plan pages
+    // Aggregate tag counts across all pages
     const tagTotals = {};
     for (const entry of floorPlanCounts) {
       const tag = entry.tag ?? '__untagged__';
-      tagTotals[tag] = (tagTotals[tag] || 0) + (entry.window_count || 0);
+      // TAG_COUNT_PROMPT returns { count }, FLOOR_PLAN_PROMPT returns { window_count }
+      const n = entry.count ?? entry.window_count ?? 0;
+      tagTotals[tag] = (tagTotals[tag] || 0) + n;
     }
     const fpTotal = Object.values(tagTotals).reduce((s, v) => s + v, 0);
     console.log(`Takeoff [${jobId}]: floor plan tag totals — ${fpTotal} windows:`, tagTotals);
@@ -1829,7 +1871,11 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'No PDF file provided' });
 
-    const { projectName } = req.body;
+    const { projectName, schedulePage } = req.body;
+    // Parse comma-separated schedule page numbers the user may have entered
+    const hintSchedulePages = schedulePage
+      ? schedulePage.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)
+      : [];
     const fs = require('fs');
     const { PDFDocument } = require('pdf-lib');
 
@@ -1848,7 +1894,7 @@ app.post('/api/takeoff/analyze', upload.single('pdf'), async (req, res) => {
     });
 
     // file.path stays on disk; runTakeoffJob deletes it when done
-    runTakeoffJob(jobId, file.path, projectName, totalPages).catch(() => {});
+    runTakeoffJob(jobId, file.path, projectName, totalPages, hintSchedulePages).catch(() => {});
 
     res.json({ jobId, totalPages });
   } catch (err) {
