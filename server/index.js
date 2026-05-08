@@ -1540,9 +1540,11 @@ ${hasSchedule ? `1. SCHEDULE + TAG COUNTS = FINAL QUANTITY
 3. One output entry per unique tag. If two tags have the same individual pane dims, keep them separate (they may have different assembly counts).
 4. If a tag appears in floor plan counts but not in the schedule: keep with dims null and confidence="low".
 5. If a tag appears in the schedule but not in floor plan counts: keep with quantity=panes_per_assembly and confidence="low".
+6. ELEVATION DEDUPLICATION: Elevation items that have the same dimensions (±3 inches) as a schedule tag should be discarded — the schedule is authoritative. Elevation items with dimensions that do NOT match any schedule tag: group by matching size (±3 inches) across all elevations/floors, sum their quantities into ONE entry per size. Never produce two output entries with the same dimensions.
 ` : `1. No schedule. Use elevation dimensions as authoritative. Floor plan counts give quantities.
 2. Group elevation windows by similar size (±3 inches). Sum quantities per size group.
 3. Floor plan total (${fpTotal}) is your target. Flag discrepancies in notes.
+4. Never produce two output entries with the same dimensions — merge and sum quantities.
 `}
 OUTPUT — one object per unique window tag:
 { "room_name": "Multiple rooms", "room_number": null, "tag": "C", "quantity": 38, "width_inches": 72, "height_inches": 72, "covering_type": "window", "mount_type": null, "motor_type": null, "opacity": null, "fabric_spec": null, "product_spec": null, "sheet_ref": "Schedule p.45", "confidence": "high", "notes": "Single hung vinyl; 1 pane per assembly × 38 assemblies" }
