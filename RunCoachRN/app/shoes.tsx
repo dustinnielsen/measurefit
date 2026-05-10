@@ -55,6 +55,24 @@ export default function ShoesScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Recommendation banner */}
+        <TouchableOpacity
+          style={styles.recBanner}
+          onPress={() => router.push('/shoe-recommendations' as any)}
+          activeOpacity={0.85}
+        >
+          <Text style={{ fontSize: 20 }}>⭐</Text>
+          <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+            <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+              Get shoe recommendations
+            </Text>
+            <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+              Top 3 picks based on your training plan
+            </Text>
+          </View>
+          <Text style={{ color: Colors.accent }}>›</Text>
+        </TouchableOpacity>
+
         {/* Add form */}
         {adding && (
           <Card style={{ marginBottom: Spacing.lg, gap: Spacing.md }}>
@@ -172,4 +190,5 @@ const styles = StyleSheet.create({
   mileageRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm, marginTop: Spacing.md },
   barTrack:   { height: 6, backgroundColor: Colors.tertiary, borderRadius: 3, marginTop: 6, overflow: 'hidden' },
   barFill:    { height: '100%', borderRadius: 3 },
+  recBanner:  { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.lg, marginBottom: Spacing.lg, borderWidth: 1.5, borderColor: Colors.accent + '40' },
 });
