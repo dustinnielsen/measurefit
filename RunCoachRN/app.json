@@ -51,7 +51,15 @@
         }
       ],
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FF5C2E",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

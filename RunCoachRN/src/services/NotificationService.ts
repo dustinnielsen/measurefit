@@ -1,7 +1,9 @@
 import * as Notifications from 'expo-notifications';
-import type { TrainingPlan } from '../types/models';
-import { currentWeekNumber, weeklyMileage, workoutsForWeek } from '../store/useAppStore';
+import { Platform } from 'react-native';
+import type { TrainingPlan, WorkoutDay } from '../types/models';
+import { WORKOUT_LABELS, WORKOUT_EMOJIS } from '../types/enums';
 
+// How notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -10,68 +12,85 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export const NotificationService = {
-  async requestPermissions(): Promise<boolean> {
-    const { status } = await Notifications.requestPermissionsAsync();
-    return status === 'granted';
-  },
+const DAILY_REMINDER_ID = 'daily-workout-reminder';
+const DEFAULT_HOUR      = 7;   // 7 AM
+const DEFAULT_MINUTE    = 0;
 
-  async scheduleWeeklySummary(plan: TrainingPlan): Promise<void> {
-    // Cancel any existing weekly summary notifications
-    await Notifications.cancelAllScheduledNotificationsAsync();
+// ── Permission ────────────────────────────────────────────────
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (Platform.OS === 'android') return true;
 
-    const granted = await NotificationService.requestPermissions();
-    if (!granted) return;
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  if (existing === 'granted') return true;
 
-    const weekNum   = currentWeekNumber(plan);
-    const workouts  = workoutsForWeek(plan, weekNum);
-    const completed = workouts.filter(w => w.isCompleted);
-    const doneMiles = completed.reduce((s, w) => s + (w.actualDistanceMiles ?? w.distanceMiles ?? 0), 0);
-    const nextWeek  = weekNum + 1;
-    const nextMiles = nextWeek <= plan.totalWeeks ? weeklyMileage(plan, nextWeek) : 0;
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
+}
 
-    const body = doneMiles > 0
-      ? `You ran ${doneMiles.toFixed(1)} mi this week. ${nextMiles > 0 ? `Week ${nextWeek} target: ${nextMiles.toFixed(0)} mi.` : 'Final week — race day incoming! 🏁'}`
-      : `Week ${weekNum} is wrapping up. Log any missed runs before Sunday ends.`;
+// ── Schedule daily workout reminder ──────────────────────────
+export async function scheduleDailyWorkoutReminder(
+  plan: TrainingPlan | null,
+  hour: number = DEFAULT_HOUR,
+  minute: number = DEFAULT_MINUTE,
+): Promise<void> {
+  await cancelDailyReminder();
 
-    // Schedule for next Sunday at 7pm
-    const now = new Date();
-    const nextSunday = new Date(now);
-    const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
-    nextSunday.setDate(now.getDate() + daysUntilSunday);
-    nextSunday.setHours(19, 0, 0, 0);
+  const granted = await requestNotificationPermission();
+  if (!granted || !plan) return;
 
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `Week ${weekNum} recap 🏃`,
-        body,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: nextSunday,
-      },
-    });
+  const today = new Date();
+  const todayWorkout = plan.workoutDays.find(w => {
+    const d = new Date(w.date);
+    return (
+      d.getFullYear() === today.getFullYear() &&
+      d.getMonth()    === today.getMonth() &&
+      d.getDate()     === today.getDate()
+    );
+  });
 
-    // Also schedule Monday morning workout reminder
-    const nextMonday = new Date(nextSunday);
-    nextMonday.setDate(nextSunday.getDate() + 1);
-    nextMonday.setHours(7, 0, 0, 0);
+  const { title, body } = buildNotificationContent(todayWorkout);
 
-    if (nextMiles > 0) {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `Week ${nextWeek} starts today 💪`,
-          body: `${nextMiles.toFixed(0)} miles on the plan. Let's go.`,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: nextMonday,
-        },
-      });
-    }
-  },
+  await Notifications.scheduleNotificationAsync({
+    identifier: DAILY_REMINDER_ID,
+    content: { title, body, sound: false },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
+  });
+}
 
-  async cancelAll(): Promise<void> {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  },
-};
+function buildNotificationContent(workout: WorkoutDay | undefined): { title: string; body: string } {
+  if (!workout) {
+    return {
+      title: '🔥 Cinder',
+      body:  'Rest day — recovery is training too.',
+    };
+  }
+
+  const emoji = WORKOUT_EMOJIS[workout.workoutType] ?? '🏃';
+  const label = WORKOUT_LABELS[workout.workoutType] ?? workout.workoutType;
+  const miles = workout.distanceMiles ? ` · ${workout.distanceMiles.toFixed(1)} mi` : '';
+
+  return {
+    title: `${emoji} Today: ${label}${miles}`,
+    body:  workout.coachNote ?? 'Tap to start your workout.',
+  };
+}
+
+// ── Cancel ────────────────────────────────────────────────────
+export async function cancelDailyReminder(): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_ID).catch(() => {});
+}
+
+// ── One-off notifications (milestones etc.) ───────────────────
+export async function sendLocalNotification(title: string, body: string): Promise<void> {
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body, sound: false },
+    trigger:  null,
+  });
+}

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAppStore } from '../src/store/useAppStore';
 import { WorkoutTicker } from './(tabs)/_layout';
+import { scheduleDailyWorkoutReminder } from '../src/services/NotificationService';
 // Side-effect import — registers the background location task before any screen renders
 import '../src/services/LocationService';
 
@@ -12,10 +13,18 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const { loadFromStorage, isLoaded } = useAppStore();
+  const plan = useAppStore(s => s.plan);
 
   useEffect(() => {
     loadFromStorage().then(() => SplashScreen.hideAsync());
   }, []);
+
+  // Schedule daily reminder whenever the plan changes
+  useEffect(() => {
+    if (isLoaded) {
+      scheduleDailyWorkoutReminder(plan);
+    }
+  }, [isLoaded, plan]);
 
   if (!isLoaded) return null;
 
