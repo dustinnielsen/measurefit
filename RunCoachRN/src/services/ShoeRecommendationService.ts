@@ -7,7 +7,7 @@ import { RunningGoal, RunningAbility, TrainingStyle } from '../types/enums';
 // Replace the placeholder IDs below with your real affiliate IDs.
 const AFFILIATE = {
   runningWarehouse: 'YOUR_RW_AFFILIATE_ID',   // ShareASale affiliate ID
-  amazon:           'cinder-app-20',           // Amazon Associate tag
+  amazon:           'cinderairunco-20',          // Amazon Associate tag
 };
 
 function rwLink(slug: string): string {
