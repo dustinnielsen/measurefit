@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
-  Alert, SafeAreaView, ScrollView, StyleSheet, TextInput,
+  Alert, Image, SafeAreaView, ScrollView, StyleSheet, TextInput,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useAppStore, currentWeekNumber, completedMilesThisWeek, weeklyMileage } from '../../src/store/useAppStore';
 import { StravaService, type StravaTokens } from '../../src/services/StravaService';
 import { Colors, CommonStyles, Radius, Spacing, Typography } from '../../src/theme';
@@ -19,6 +20,31 @@ export default function SettingsTab() {
   const [stravaTokens, setStravaTokens] = useState<StravaTokens | null>(null);
   const [goalWeightInput, setGoalWeightInput] = useState('');
   const [editingGoalWeight, setEditingGoalWeight] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+
+  async function pickProfilePhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo access to set a profile photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await setProfile({ ...profile!, avatarUri: result.assets[0].uri });
+    }
+  }
+
+  async function saveDisplayName() {
+    if (!profile) return;
+    await setProfile({ ...profile, displayName: nameInput.trim() });
+    setEditingName(false);
+  }
 
   useFocusEffect(useCallback(() => {
     StravaService.loadTokens().then(setStravaTokens);
@@ -117,11 +143,48 @@ export default function SettingsTab() {
         {/* ── Profile Hero ── */}
         <View style={styles.hero}>
           <View style={CommonStyles.rowBetween}>
-            <View>
-              <Text style={[Typography.title2, { color: Colors.textPrimary }]}>My Profile</Text>
-              <Text style={[Typography.caption1, { color: Colors.textSecondary, marginTop: 2 }]}>
-                {GOAL_EMOJIS[profile.goal]}  {GOAL_LABELS[profile.goal]}  ·  {ABILITY_LABELS[profile.ability]}
-              </Text>
+            {/* Avatar + name */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
+              <TouchableOpacity onPress={pickProfilePhoto} style={styles.avatarWrap}>
+                {profile.avatarUri ? (
+                  <Image source={{ uri: profile.avatarUri }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Text style={{ fontSize: 28 }}>🔥</Text>
+                  </View>
+                )}
+                <View style={styles.avatarEditBadge}>
+                  <Text style={{ fontSize: 10, color: '#fff' }}>✎</Text>
+                </View>
+              </TouchableOpacity>
+              <View>
+                {editingName ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                    <TextInput
+                      style={styles.nameInput}
+                      value={nameInput}
+                      onChangeText={setNameInput}
+                      placeholder="Your name"
+                      placeholderTextColor={Colors.textTertiary}
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={saveDisplayName}
+                    />
+                    <TouchableOpacity onPress={saveDisplayName}>
+                      <Text style={[Typography.caption1, { color: Colors.accent, fontWeight: '700' }]}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={() => { setNameInput(profile.displayName ?? ''); setEditingName(true); }}>
+                    <Text style={[Typography.title3, { color: Colors.textPrimary }]}>
+                      {profile.displayName || 'Add your name'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <Text style={[Typography.caption1, { color: Colors.textSecondary, marginTop: 2 }]}>
+                  {GOAL_EMOJIS[profile.goal]}  {GOAL_LABELS[profile.goal]}  ·  {ABILITY_LABELS[profile.ability]}
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               style={styles.goalBadge}
@@ -392,13 +455,19 @@ const styles = StyleSheet.create({
   inlineInput:    { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.sm, paddingVertical: 4, color: Colors.textPrimary, fontSize: 15, minWidth: 60, textAlign: 'right' },
 
   // Profile hero
-  hero:         { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.lg, marginBottom: Spacing.xl, gap: Spacing.sm },
-  goalBadge:    { backgroundColor: Colors.accent + '15', borderRadius: Radius.full, paddingHorizontal: Spacing.md, paddingVertical: 6, borderWidth: 1, borderColor: Colors.accent + '30' },
-  statsRow:     { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
-  statPill:     { flex: 1, alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, paddingVertical: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
-  weekBarTrack: { height: 6, backgroundColor: Colors.tertiary, borderRadius: 3, overflow: 'hidden' },
-  weekBarFill:  { height: '100%', backgroundColor: Colors.accent, borderRadius: 3 },
-  shoeRow:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.sm },
-  shoeBarTrack: { height: 4, backgroundColor: Colors.tertiary, borderRadius: 2, marginTop: 4, overflow: 'hidden' },
-  shoeBarFill:  { height: '100%', borderRadius: 2 },
+  hero:              { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.lg, marginBottom: Spacing.xl, gap: Spacing.sm },
+  goalBadge:         { backgroundColor: Colors.accent + '15', borderRadius: Radius.full, paddingHorizontal: Spacing.md, paddingVertical: 6, borderWidth: 1, borderColor: Colors.accent + '30' },
+  statsRow:          { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  statPill:          { flex: 1, alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, paddingVertical: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  weekBarTrack:      { height: 6, backgroundColor: Colors.tertiary, borderRadius: 3, overflow: 'hidden' },
+  weekBarFill:       { height: '100%', backgroundColor: Colors.accent, borderRadius: 3 },
+  shoeRow:           { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.sm },
+  shoeBarTrack:      { height: 4, backgroundColor: Colors.tertiary, borderRadius: 2, marginTop: 4, overflow: 'hidden' },
+  shoeBarFill:       { height: '100%', borderRadius: 2 },
+  // Avatar
+  avatarWrap:        { position: 'relative' },
+  avatar:            { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: Colors.accent },
+  avatarPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.surfaceAlt, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
+  avatarEditBadge:   { position: 'absolute', bottom: 0, right: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
+  nameInput:         { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.accent, paddingHorizontal: Spacing.sm, paddingVertical: 4, color: Colors.textPrimary, fontSize: 16, minWidth: 120 },
 });

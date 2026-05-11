@@ -59,6 +59,12 @@
           "color": "#FF5C2E",
           "sounds": []
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cinder uses your photo library to set your profile photo."
+        }
       ]
     ],
     "experiments": {

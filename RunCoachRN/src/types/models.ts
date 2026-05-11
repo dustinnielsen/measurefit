@@ -26,6 +26,9 @@ export interface UserProfile {
   // Weight tracking
   weightUnit?: 'lbs' | 'kg';
   goalWeight?: number; // stored in lbs internally
+  // Profile
+  displayName?: string;
+  avatarUri?: string;    // local file URI from image picker
 }
 
 // MARK: - Weight tracking
