@@ -13,6 +13,7 @@ import { Card } from '../../src/components/ui/Card';
 import {
   ABILITY_LABELS, GOAL_EMOJIS, GOAL_LABELS, TRAINING_STYLE_LABELS,
 } from '../../src/types/enums';
+import { emberScore } from '../../src/services/MilestoneService';
 
 export default function SettingsTab() {
   const { profile, plan, clearAllData, generateAndSavePlan, resetProgress, setProfile } = useAppStore();
@@ -122,14 +123,67 @@ export default function SettingsTab() {
   }
 
   // Profile hub stats
-  const weekNum    = plan ? currentWeekNumber(plan) : 0;
-  const doneMiles  = plan ? completedMilesThisWeek(plan) : 0;
+  const morningCheckin = useAppStore(s => s.morningCheckin);
+  const weekNum     = plan ? currentWeekNumber(plan) : 0;
+  const doneMiles   = plan ? completedMilesThisWeek(plan) : 0;
   const targetMiles = plan ? weeklyMileage(plan, weekNum) : 0;
-  const weekPct    = targetMiles > 0 ? Math.min(doneMiles / targetMiles, 1) : 0;
-  const totalMiles = plan
-    ? plan.workoutDays.filter(w => w.completed && w.actualMiles).reduce((sum, w) => sum + (w.actualMiles ?? 0), 0)
-    : 0;
-  const completedWorkouts = plan ? plan.workoutDays.filter(w => w.completed).length : 0;
+  const weekPct     = targetMiles > 0 ? Math.min(doneMiles / targetMiles, 1) : 0;
+
+  const completedDays = plan ? plan.workoutDays.filter(w => w.isCompleted) : [];
+  const totalMiles    = completedDays.reduce((sum, w) => sum + (w.actualDistanceMiles ?? 0), 0);
+  const completedWorkouts = completedDays.length;
+  const totalSeconds  = completedDays.reduce((sum, w) => sum + (w.actualDurationSeconds ?? 0), 0);
+  const totalHours    = Math.floor(totalSeconds / 3600);
+  const totalMins     = Math.floor((totalSeconds % 3600) / 60);
+  const timeOnFeet    = totalSeconds > 0
+    ? (totalHours > 0 ? `${totalHours}h ${totalMins}m` : `${totalMins}m`)
+    : '—';
+
+  // Personal bests
+  const fastestPace  = completedDays
+    .map(w => w.averagePaceMinPerMile).filter((p): p is number => !!p && p > 0)
+    .reduce((best, p) => p < best ? p : best, Infinity);
+  const longestRun   = completedDays
+    .map(w => w.actualDistanceMiles).filter((d): d is number => !!d && d > 0)
+    .reduce((best, d) => d > best ? d : best, 0);
+  const bestRace     = races.filter(r => r.finishTimeSecs)
+    .sort((a, b) => (a.finishTimeSecs ?? 0) - (b.finishTimeSecs ?? 0))[0];
+
+  // Format fastest pace
+  const formatPace = (p: number) => {
+    if (!isFinite(p)) return '—';
+    const mins = Math.floor(p);
+    const secs = Math.round((p - mins) * 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}/mi`;
+  };
+  const formatRaceTime = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return h > 0 ? `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}` : `${m}:${s.toString().padStart(2,'0')}`;
+  };
+
+  // Streak — consecutive days with completed workouts up to today
+  const streak = (() => {
+    if (!plan) return 0;
+    const completedDates = new Set(
+      completedDays.map(w => w.date?.slice(0, 10)).filter(Boolean)
+    );
+    let count = 0;
+    const d = new Date(); d.setHours(0,0,0,0);
+    while (true) {
+      const key = d.toISOString().slice(0, 10);
+      if (completedDates.has(key)) { count++; d.setDate(d.getDate() - 1); }
+      else break;
+    }
+    return count;
+  })();
+
+  // Cinder Score
+  const todayScore = morningCheckin
+    ? emberScore(morningCheckin.sleepQuality, morningCheckin.energyLevel, morningCheckin.stressLevel)
+    : null;
+
   const nextRace = races.find(r => !r.finishTimeSecs && new Date(r.date) > new Date());
   const daysToRace = nextRace
     ? Math.ceil((new Date(nextRace.date).getTime() - new Date().setHours(0,0,0,0)) / 86400000)
@@ -239,6 +293,43 @@ export default function SettingsTab() {
               <Text style={{ color: Colors.textTertiary, fontSize: 12 }}>›</Text>
             </TouchableOpacity>
           )}
+
+          {/* Streak + Cinder Score */}
+          <View style={[CommonStyles.rowBetween, { marginTop: Spacing.sm, gap: Spacing.sm }]}>
+            <View style={styles.streakBadge}>
+              <Text style={{ fontSize: 20 }}>🔥</Text>
+              <View style={{ marginLeft: Spacing.sm }}>
+                <Text style={[Typography.headline, { color: Colors.accent, fontWeight: '700' }]}>
+                  {streak} day{streak !== 1 ? 's' : ''}
+                </Text>
+                <Text style={[Typography.caption2, { color: Colors.textTertiary }]}>streak</Text>
+              </View>
+            </View>
+            {todayScore !== null && (
+              <TouchableOpacity style={styles.scoreBadge} onPress={() => router.push('/morning-checkin' as any)}>
+                <Text style={{ fontSize: 20 }}>⚡</Text>
+                <View style={{ marginLeft: Spacing.sm }}>
+                  <Text style={[Typography.headline, { color: Colors.accent, fontWeight: '700' }]}>
+                    {todayScore}
+                  </Text>
+                  <Text style={[Typography.caption2, { color: Colors.textTertiary }]}>Cinder Score</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Personal Bests */}
+        <View style={styles.pbCard}>
+          <Text style={[Typography.label, { color: Colors.textSecondary, marginBottom: Spacing.md }]}>PERSONAL BESTS</Text>
+          <View style={styles.pbRow}>
+            <PBStat label="Fastest Mile" value={formatPace(fastestPace)} icon="⚡" />
+            <PBStat label="Longest Run" value={longestRun > 0 ? `${longestRun.toFixed(1)} mi` : '—'} icon="📏" />
+            <PBStat label="Time on Feet" value={timeOnFeet} icon="⏱️" />
+            {bestRace && (
+              <PBStat label={bestRace.distanceLabel} value={formatRaceTime(bestRace.finishTimeSecs!)} icon="🏅" />
+            )}
+          </View>
         </View>
 
 
@@ -415,6 +506,16 @@ export default function SettingsTab() {
   );
 }
 
+function PBStat({ label, value, icon }: { label: string; value: string; icon: string }) {
+  return (
+    <View style={styles.pbStat}>
+      <Text style={{ fontSize: 18, marginBottom: 4 }}>{icon}</Text>
+      <Text style={[Typography.subhead, { color: Colors.textPrimary, fontWeight: '700' }]}>{value}</Text>
+      <Text style={[Typography.caption2, { color: Colors.textTertiary, marginTop: 2, textAlign: 'center' }]}>{label}</Text>
+    </View>
+  );
+}
+
 function StatPill({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <View style={[styles.statPill, accent && { borderColor: Colors.accent + '40', backgroundColor: Colors.accent + '12' }]}>
@@ -464,6 +565,15 @@ const styles = StyleSheet.create({
   shoeRow:           { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.sm },
   shoeBarTrack:      { height: 4, backgroundColor: Colors.tertiary, borderRadius: 2, marginTop: 4, overflow: 'hidden' },
   shoeBarFill:       { height: '100%', borderRadius: 2 },
+  // Streak + score
+  streakBadge: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  scoreBadge:  { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+
+  // Personal bests
+  pbCard:  { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.lg, marginBottom: Spacing.xl },
+  pbRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  pbStat:  { flex: 1, minWidth: '40%', alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
+
   // Avatar
   avatarWrap:        { position: 'relative' },
   avatar:            { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: Colors.accent },
