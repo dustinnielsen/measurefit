@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
   SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { useAppStore, currentWeekNumber, completedMilesThisWeek, weeklyMileage } from '../src/store/useAppStore';
@@ -11,6 +12,8 @@ import { GOAL_LABELS, ABILITY_LABELS, WorkoutType } from '../src/types/enums';
 import { getPaceZones } from '../src/services/PaceService';
 
 const ANTHROPIC_API_KEY: string = Constants.expoConfig?.extra?.anthropicApiKey ?? '';
+const CHAT_STORAGE_KEY = '@cinder/coach_chat_history';
+const MAX_STORED_MESSAGES = 20; // keep last 20 messages for context
 
 interface Message {
   id: string;
@@ -63,7 +66,7 @@ async function askClaude(messages: Message[], systemPrompt: string): Promise<str
   }
 
   const body = {
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 512,
     system: systemPrompt,
     messages: messages.map(m => ({ role: m.role, content: m.text })),
@@ -88,20 +91,38 @@ async function askClaude(messages: Message[], systemPrompt: string): Promise<str
   return data.content?.[0]?.text ?? 'No response.';
 }
 
+const WELCOME_MESSAGE: Message = {
+  id: '0',
+  role: 'assistant',
+  text: `Hey! I'm your Cinder coach. Ask me anything — pacing, recovery, what today's workout is building, or how your training is going.`,
+};
+
 export default function CoachChatScreen() {
   const { profile, plan, feedback } = useAppStore();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      text: `Hey! I'm your Cinder coach. Ask me anything — pacing, recovery, what today's workout is building, or how your training is going.`,
-    },
-  ]);
-  const [input, setInput]     = useState('');
-  const [loading, setLoading] = useState(false);
-  const listRef               = useRef<FlatList>(null);
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  const [input, setInput]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const listRef                 = useRef<FlatList>(null);
 
   const systemPrompt = buildSystemPrompt(buildContext(profile, plan, feedback));
+
+  // Load saved chat history on mount
+  useEffect(() => {
+    AsyncStorage.getItem(CHAT_STORAGE_KEY).then(raw => {
+      if (!raw) return;
+      try {
+        const saved: Message[] = JSON.parse(raw);
+        if (saved.length > 0) setMessages(saved);
+      } catch {}
+    });
+  }, []);
+
+  // Save chat history whenever messages change
+  useEffect(() => {
+    if (messages.length <= 1) return; // don't save just the welcome message
+    const toStore = messages.slice(-MAX_STORED_MESSAGES);
+    AsyncStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toStore)).catch(() => {});
+  }, [messages]);
 
   async function send() {
     const text = input.trim();
@@ -127,8 +148,8 @@ export default function CoachChatScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: Colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView style={{ flex: 1 }}>
 
         {/* Header */}
         <View style={styles.header}>
@@ -138,7 +159,12 @@ export default function CoachChatScreen() {
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={[Typography.headline, { color: Colors.textPrimary }]}>🔥  Coach</Text>
           </View>
-          <View style={{ width: 60 }} />
+          <TouchableOpacity onPress={() => {
+            setMessages([WELCOME_MESSAGE]);
+            AsyncStorage.removeItem(CHAT_STORAGE_KEY).catch(() => {});
+          }}>
+            <Text style={[Typography.caption1, { color: Colors.textTertiary }]}>Clear</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Messages */}
@@ -185,8 +211,8 @@ export default function CoachChatScreen() {
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>↑</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
