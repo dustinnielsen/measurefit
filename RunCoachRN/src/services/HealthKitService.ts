@@ -1,61 +1,134 @@
-/**
- * HealthKit service — stubbed until the app is built with EAS + Apple Developer account.
- *
- * All methods are safe to call now. `isAvailable()` returns false so the UI
- * shows "Connect Apple Health (requires full build)" instead of crashing.
- * When the entitlement is live, swap this file for the real implementation
- * using react-native-health or expo-health.
- */
+import { Platform } from 'react-native';
+import { WorkoutType } from '../types/enums';
 
-export interface HKWorkoutSample {
-  startDate: Date;
-  endDate: Date;
-  distanceMeters: number;
-  activeCalories?: number;
-  heartRateSamples?: number[];
+// Lazy import — only available on iOS device builds
+let HKWorkoutActivityType: any;
+let HKQuantityTypeIdentifier: any;
+let HKUnit: any;
+let HealthKit: any;
+
+if (Platform.OS === 'ios') {
+  try {
+    const hk = require('@kingstinct/react-native-healthkit');
+    HKWorkoutActivityType    = hk.HKWorkoutActivityType;
+    HKQuantityTypeIdentifier = hk.HKQuantityTypeIdentifier;
+    HKUnit                   = hk.HKUnit;
+    HealthKit                = hk.default ?? hk;
+  } catch {}
 }
 
-export interface HKHealthData {
-  restingHeartRate?: number;
-  heartRateVariability?: number;
-  sleepHours?: number;
-  stepCount?: number;
+// ── Permission request ────────────────────────────────────────
+export async function requestHealthKitPermissions(): Promise<boolean> {
+  if (Platform.OS !== 'ios' || !HealthKit) return false;
+  try {
+    await HealthKit.requestAuthorization(
+      // Read types
+      [HKQuantityTypeIdentifier.restingHeartRate, HKQuantityTypeIdentifier.heartRate],
+      // Write types
+      [
+        HKQuantityTypeIdentifier.activeEnergyBurned,
+        HKQuantityTypeIdentifier.distanceWalkingRunning,
+      ],
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-const UNAVAILABLE_MSG =
-  'Apple Health requires the full RunCoach build (EAS + Apple Developer account). ' +
-  'All other features work normally.';
+// ── Map Cinder workout type → HealthKit activity type ─────────
+function toHKActivityType(type: WorkoutType): number {
+  if (!HKWorkoutActivityType) return 37; // running fallback
+  switch (type) {
+    case WorkoutType.Walk:      return HKWorkoutActivityType.walking;
+    case WorkoutType.Easy:
+    case WorkoutType.Long:
+    case WorkoutType.Tempo:
+    case WorkoutType.Strides:
+    case WorkoutType.Intervals: return HKWorkoutActivityType.running;
+    case WorkoutType.Strength:  return HKWorkoutActivityType.traditionalStrengthTraining;
+    case WorkoutType.Mobility:  return HKWorkoutActivityType.flexibility;
+    default:                    return HKWorkoutActivityType.running;
+  }
+}
 
-export const HealthKitService = {
-  /** Always false in Expo Go — becomes true once EAS build with entitlement is live. */
-  isAvailable(): boolean {
+// ── Save workout to Apple Health ──────────────────────────────
+export async function saveWorkoutToHealthKit(params: {
+  workoutType:    WorkoutType;
+  startDate:      Date;
+  endDate:        Date;
+  distanceMiles?: number;
+  calories?:      number;
+}): Promise<boolean> {
+  if (Platform.OS !== 'ios' || !HealthKit) return false;
+
+  try {
+    await requestHealthKitPermissions();
+
+    const { workoutType, startDate, endDate, distanceMiles, calories } = params;
+    const activityType = toHKActivityType(workoutType);
+
+    const samples: any[] = [];
+
+    if (distanceMiles && distanceMiles > 0) {
+      samples.push({
+        quantityType: HKQuantityTypeIdentifier.distanceWalkingRunning,
+        unit:         'mi',
+        quantity:     distanceMiles,
+        startDate,
+        endDate,
+      });
+    }
+
+    if (calories && calories > 0) {
+      samples.push({
+        quantityType: HKQuantityTypeIdentifier.activeEnergyBurned,
+        unit:         'kcal',
+        quantity:     calories,
+        startDate,
+        endDate,
+      });
+    }
+
+    await HealthKit.saveWorkout({
+      workoutActivityType: activityType,
+      startDate,
+      endDate,
+      totalEnergyBurned:    calories    ? { unit: 'kcal', quantity: calories }    : undefined,
+      totalDistance:        distanceMiles ? { unit: 'mi', quantity: distanceMiles } : undefined,
+      quantitySamples:      samples,
+    });
+
+    return true;
+  } catch (e) {
+    console.warn('HealthKit saveWorkout error:', e);
     return false;
-  },
+  }
+}
 
-  /** Shows a clear message rather than crashing. */
-  async requestPermissions(): Promise<boolean> {
-    console.log('[HealthKit] ' + UNAVAILABLE_MSG);
-    return false;
-  },
+// ── Read resting heart rate (most recent) ─────────────────────
+export async function getRestingHeartRate(): Promise<number | null> {
+  if (Platform.OS !== 'ios' || !HealthKit) return null;
 
-  /** Save a completed workout run to Apple Health. No-op when unavailable. */
-  async saveWorkout(_sample: HKWorkoutSample): Promise<void> {
-    if (!this.isAvailable()) return;
-    // TODO: implement with react-native-health once EAS build is live
-    // await AppleHealthKit.saveWorkout({ ... })
-  },
+  try {
+    await requestHealthKitPermissions();
 
-  /** Read today's health summary. Returns null when unavailable. */
-  async readTodayHealth(): Promise<HKHealthData | null> {
-    if (!this.isAvailable()) return null;
-    // TODO: implement with react-native-health once EAS build is live
+    const results = await HealthKit.queryQuantitySamples(
+      HKQuantityTypeIdentifier.restingHeartRate,
+      {
+        unit:  'count/min',
+        from:  new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // last 7 days
+        to:    new Date(),
+        limit: 1,
+        ascending: false,
+      }
+    );
+
+    if (results && results.length > 0) {
+      return Math.round(results[0].quantity);
+    }
     return null;
-  },
-
-  /** Human-readable status string for the Settings screen. */
-  statusMessage(): string {
-    return this.isAvailable()
-      ? 'Connected to Apple Health'
-      : 'Available in the full app build';
-  },
-};
+  } catch {
+    return null;
+  }
+}

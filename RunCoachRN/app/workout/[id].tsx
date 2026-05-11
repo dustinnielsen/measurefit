@@ -21,6 +21,7 @@ import { getWarmupRoutine } from '../../src/services/WarmupService';
 import { checkNewMilestones, MILESTONES } from '../../src/services/MilestoneService';
 import { parseGPX } from '../../src/services/GPXService';
 import { estimateCalories } from '../../src/services/CalorieService';
+import { saveWorkoutToHealthKit } from '../../src/services/HealthKitService';
 import type { Milestone } from '../../src/types/models';
 
 export default function WorkoutScreen() {
@@ -133,14 +134,27 @@ export default function WorkoutScreen() {
       ? estimateCalories(workout.workoutType, durationSecs, weightLbs)
       : undefined;
 
+    const endTime   = new Date();
+    const startTime = durationSecs ? new Date(endTime.getTime() - durationSecs * 1000) : endTime;
+    const distanceMiles = finished?.distanceMiles || gpsData.distanceMiles || undefined;
+
     await updateWorkout(workout!.id, {
       isCompleted:           true,
-      completedAt:           new Date().toISOString(),
+      completedAt:           endTime.toISOString(),
       actualDurationSeconds: durationSecs,
-      actualDistanceMiles:   finished?.distanceMiles || gpsData.distanceMiles || undefined,
+      actualDistanceMiles:   distanceMiles,
       route:                 gpsData.points.length > 0 ? gpsData.points : undefined,
       estimatedCalories:     calories,
     });
+
+    // Save to Apple Health
+    saveWorkoutToHealthKit({
+      workoutType:  workout!.workoutType,
+      startDate:    startTime,
+      endDate:      endTime,
+      distanceMiles,
+      calories,
+    }).catch(() => {});
 
     // Check for newly earned milestones
     const updatedPlan = useAppStore.getState().plan;

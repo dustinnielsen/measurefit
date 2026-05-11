@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView, Platform, SafeAreaView, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -10,6 +10,7 @@ import { Colors, CommonStyles, Radius, Spacing, Typography } from '../src/theme'
 import { Card } from '../src/components/ui/Card';
 import { PrimaryButton } from '../src/components/ui/Buttons';
 import { emberScore, emberScoreLabel, emberScoreColor } from '../src/services/MilestoneService';
+import { getRestingHeartRate } from '../src/services/HealthKitService';
 import type { MorningCheckin } from '../src/types/models';
 
 type Level = 1 | 2 | 3;
@@ -45,6 +46,11 @@ export default function MorningCheckinScreen() {
   const [energy,      setEnergy]      = useState<Level>(todayCheckin?.energyLevel  ?? 2);
   const [stress,      setStress]      = useState<Level>(todayCheckin?.stressLevel  ?? 2);
   const [weightInput, setWeightInput] = useState('');
+  const [restingHR,   setRestingHR]   = useState<number | null>(null);
+
+  useEffect(() => {
+    getRestingHeartRate().then(hr => { if (hr) setRestingHR(hr); });
+  }, []);
 
   const score = emberScore(sleep, energy, stress);
   const label = emberScoreLabel(score);
@@ -92,6 +98,11 @@ export default function MorningCheckinScreen() {
           <View style={{ flex: 1, marginLeft: Spacing.lg }}>
             <Text style={[Typography.label, { color: Colors.textSecondary }]}>CINDER SCORE</Text>
             <Text style={[Typography.title3, { color, marginTop: 2 }]}>{label}</Text>
+            {restingHR && (
+              <Text style={[Typography.caption1, { color: Colors.textSecondary, marginTop: 4 }]}>
+                ❤️ Resting HR: {restingHR} bpm
+              </Text>
+            )}
             <Text style={[Typography.caption1, { color: Colors.textSecondary, marginTop: 4 }]}>
               {scoreAdvice(score)}
             </Text>

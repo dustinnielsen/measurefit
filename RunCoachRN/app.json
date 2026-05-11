@@ -65,6 +65,13 @@
         {
           "photosPermission": "Cinder uses your photo library to set your profile photo."
         }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Cinder reads your resting heart rate to improve your Cinder Score and training recommendations.",
+          "NSHealthUpdateUsageDescription": "Cinder saves your completed workouts to Apple Health so they count toward your Activity rings."
+        }
       ]
     ],
     "experiments": {
