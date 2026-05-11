@@ -50,6 +50,7 @@ export default function RootLayout() {
         <Stack.Screen name="weight-history"   options={{ presentation: 'modal' }} />
         <Stack.Screen name="log-workout"          options={{ presentation: 'modal' }} />
         <Stack.Screen name="shoe-recommendations" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="races-nearby"         options={{ presentation: 'modal' }} />
       </Stack>
       </View>
     </GestureHandlerRootView>

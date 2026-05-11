@@ -459,6 +459,14 @@ export default function SettingsTab() {
             <Text style={{ color: Colors.textTertiary }}>›</Text>
           </View>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/races-nearby' as any)}>
+          <View style={CommonStyles.rowBetween}>
+            <Text style={[Typography.subhead, { color: Colors.accent, fontWeight: '600' }]}>
+              🏁  Races Near Me
+            </Text>
+            <Text style={{ color: Colors.textTertiary }}>›</Text>
+          </View>
+        </TouchableOpacity>
 
         <SectionTitle title="Plan" />
         <TouchableOpacity style={[styles.actionRow, { marginBottom: Spacing.sm }]} onPress={() => router.push('/edit-race-date')}>
