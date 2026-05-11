@@ -5,7 +5,7 @@ import {
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useAppStore, currentWeekNumber } from '../../src/store/useAppStore';
+import { useAppStore, currentWeekNumber, completedMilesThisWeek, weeklyMileage } from '../../src/store/useAppStore';
 import { StravaService, type StravaTokens } from '../../src/services/StravaService';
 import { Colors, CommonStyles, Radius, Spacing, Typography } from '../../src/theme';
 import { Card } from '../../src/components/ui/Card';
@@ -95,42 +95,88 @@ export default function SettingsTab() {
     );
   }
 
+  // Profile hub stats
+  const weekNum    = plan ? currentWeekNumber(plan) : 0;
+  const doneMiles  = plan ? completedMilesThisWeek(plan) : 0;
+  const targetMiles = plan ? weeklyMileage(plan, weekNum) : 0;
+  const weekPct    = targetMiles > 0 ? Math.min(doneMiles / targetMiles, 1) : 0;
+  const totalMiles = plan
+    ? plan.workoutDays.filter(w => w.completed && w.actualMiles).reduce((sum, w) => sum + (w.actualMiles ?? 0), 0)
+    : 0;
+  const completedWorkouts = plan ? plan.workoutDays.filter(w => w.completed).length : 0;
+  const nextRace = races.find(r => !r.finishTimeSecs && new Date(r.date) > new Date());
+  const daysToRace = nextRace
+    ? Math.ceil((new Date(nextRace.date).getTime() - new Date().setHours(0,0,0,0)) / 86400000)
+    : null;
+  const activeShoe = useAppStore.getState().shoes.find(s => !s.retired);
+
   return (
     <SafeAreaView style={CommonStyles.screenBg}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={[Typography.title2, { color: Colors.textPrimary, marginBottom: Spacing.xl }]}>
-          Settings
-        </Text>
 
-        {/* Profile */}
-        <SectionTitle title="Your Profile" />
-        <Card>
-          <Row label="Ability"       value={ABILITY_LABELS[profile.ability]} />
-          <Divider />
-          <Row label="Goal"          value={`${GOAL_EMOJIS[profile.goal]}  ${GOAL_LABELS[profile.goal]}`} />
-          <Divider />
-          <Row label="Days / week"   value={`${profile.runningDaysPerWeek} days`} />
-          <Divider />
-          <Row label="Weekly mileage" value={`${profile.weeklyMileage.toFixed(0)} mi`} />
-          <Divider />
-          <Row label="Style"         value={TRAINING_STYLE_LABELS[profile.trainingStyle]} />
-        </Card>
+        {/* ── Profile Hero ── */}
+        <View style={styles.hero}>
+          <View style={CommonStyles.rowBetween}>
+            <View>
+              <Text style={[Typography.title2, { color: Colors.textPrimary }]}>My Profile</Text>
+              <Text style={[Typography.caption1, { color: Colors.textSecondary, marginTop: 2 }]}>
+                {GOAL_EMOJIS[profile.goal]}  {GOAL_LABELS[profile.goal]}  ·  {ABILITY_LABELS[profile.ability]}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.goalBadge}
+              onPress={() => router.push('/edit-race-date')}
+            >
+              <Text style={[Typography.caption1, { color: Colors.accent, fontWeight: '700' }]}>
+                {profile.goalDate
+                  ? `🏁 ${new Date(profile.goalDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                  : '+ Race Date'}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* Plan */}
-        {plan && (
-          <>
-            <SectionTitle title="Training Plan" />
-            <Card>
-              <Row label="Total weeks"   value={`${plan.totalWeeks} weeks`} />
-              <Divider />
-              <Row label="Current week"  value={`Week ${currentWeekNumber(plan)}`} />
-              <Divider />
-              <Row label="Peak mileage"  value={`${plan.peakWeeklyMileage.toFixed(0)} mi/wk`} />
-              <Divider />
-              <Row label="Generated"     value={new Date(plan.generatedAt).toLocaleDateString()} />
-            </Card>
-          </>
-        )}
+          {/* Stats row */}
+          <View style={styles.statsRow}>
+            <StatPill label="Total Miles" value={totalMiles.toFixed(0)} />
+            <StatPill label="Workouts" value={`${completedWorkouts}`} />
+            {plan ? <StatPill label="Week" value={`${weekNum} / ${plan.totalWeeks}`} /> : null}
+            {daysToRace !== null ? <StatPill label="Race In" value={`${daysToRace}d`} accent /> : null}
+          </View>
+
+          {/* This week progress */}
+          {plan && (
+            <View style={{ marginTop: Spacing.md }}>
+              <View style={[CommonStyles.rowBetween, { marginBottom: 6 }]}>
+                <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>This week</Text>
+                <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+                  {doneMiles.toFixed(1)} / {targetMiles.toFixed(0)} mi
+                </Text>
+              </View>
+              <View style={styles.weekBarTrack}>
+                <View style={[styles.weekBarFill, { width: `${weekPct * 100}%` }]} />
+              </View>
+            </View>
+          )}
+
+          {/* Active shoe */}
+          {activeShoe && (
+            <TouchableOpacity style={styles.shoeRow} onPress={() => router.push('/shoes' as any)}>
+              <Text style={{ fontSize: 16 }}>👟</Text>
+              <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                <Text style={[Typography.caption1, { color: Colors.textSecondary }]}>
+                  {activeShoe.brand} {activeShoe.name}  ·  {activeShoe.totalMiles.toFixed(0)} / {activeShoe.alertMiles} mi
+                </Text>
+                <View style={styles.shoeBarTrack}>
+                  <View style={[styles.shoeBarFill, {
+                    width: `${Math.min(activeShoe.totalMiles / activeShoe.alertMiles, 1) * 100}%`,
+                    backgroundColor: activeShoe.totalMiles >= activeShoe.alertMiles * 0.9 ? Colors.warning : Colors.accent,
+                  }]} />
+                </View>
+              </View>
+              <Text style={{ color: Colors.textTertiary, fontSize: 12 }}>›</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
 
         {/* Strava */}
@@ -306,6 +352,15 @@ export default function SettingsTab() {
   );
 }
 
+function StatPill({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <View style={[styles.statPill, accent && { borderColor: Colors.accent + '40', backgroundColor: Colors.accent + '12' }]}>
+      <Text style={[Typography.headline, { color: accent ? Colors.accent : Colors.textPrimary, fontWeight: '700' }]}>{value}</Text>
+      <Text style={[Typography.caption2, { color: Colors.textTertiary, marginTop: 2 }]}>{label}</Text>
+    </View>
+  );
+}
+
 function SectionTitle({ title }: { title: string }) {
   return (
     <Text style={[Typography.label, { color: Colors.textSecondary, marginTop: Spacing.xl, marginBottom: Spacing.sm }]}>
@@ -335,4 +390,15 @@ const styles = StyleSheet.create({
   unitChip:       { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: Colors.surfaceAlt, borderWidth: 1.5, borderColor: Colors.border },
   unitChipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '12' },
   inlineInput:    { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.sm, paddingVertical: 4, color: Colors.textPrimary, fontSize: 15, minWidth: 60, textAlign: 'right' },
+
+  // Profile hero
+  hero:         { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.lg, marginBottom: Spacing.xl, gap: Spacing.sm },
+  goalBadge:    { backgroundColor: Colors.accent + '15', borderRadius: Radius.full, paddingHorizontal: Spacing.md, paddingVertical: 6, borderWidth: 1, borderColor: Colors.accent + '30' },
+  statsRow:     { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  statPill:     { flex: 1, alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, paddingVertical: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  weekBarTrack: { height: 6, backgroundColor: Colors.tertiary, borderRadius: 3, overflow: 'hidden' },
+  weekBarFill:  { height: '100%', backgroundColor: Colors.accent, borderRadius: 3 },
+  shoeRow:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.sm },
+  shoeBarTrack: { height: 4, backgroundColor: Colors.tertiary, borderRadius: 2, marginTop: 4, overflow: 'hidden' },
+  shoeBarFill:  { height: '100%', borderRadius: 2 },
 });
