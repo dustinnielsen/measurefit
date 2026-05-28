@@ -320,15 +320,17 @@ app.post('/send-quote', async (req, res) => {
       .single();
 
     if (!tokenData) {
-      const token = require('crypto').randomBytes(32).toString('hex');
-      const { data: newToken } = await supabaseAdmin
+      const newTokenValue = require('crypto').randomBytes(32).toString('hex');
+      const { data: created } = await supabaseAdmin
         .from('quote_tokens')
-        .insert({ quote_id: quoteId, token, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() })
+        .insert({ quote_id: quoteId, token: newTokenValue, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() })
         .select('token')
         .single();
+      tokenData = created;
     }
 
-    const token = tokenData.token;
+    const token = tokenData?.token;
+    if (!token) throw new Error('Failed to create or retrieve quote token');
     const dealerName = quote.dealer.app_name ?? quote.dealer.name;
     const customerName = `${quote.customer.first_name} ${quote.customer.last_name}`;
     const brandColor = quote.dealer.brand_color ?? '#0A84FF';
