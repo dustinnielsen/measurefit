@@ -1907,6 +1907,16 @@ app.get('/api/takeoff/status/:jobId', (req, res) => {
     error: job.error,
   });
 });
+// ─── HEALTH / SUPABASE KEEP-ALIVE ─────────────────────────────────────────────
+app.get('/health', async (req, res) => {
+  try {
+    await supabase.from('dealers').select('id').limit(1);
+    res.json({ ok: true, ts: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', function() {
